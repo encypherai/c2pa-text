@@ -2,12 +2,76 @@ name: c2pa-text
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*.*.*'
       - 'go/v*.*.*'
+  pull_request:
   workflow_dispatch:
 
 jobs:
+  ci_python:
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Sync
+        run: uv sync --all-extras --dev
+      - name: Lint
+        run: uv run ruff check .
+      - name: Test
+        run: uv run pytest -c pytest.ini
+
+  ci_typescript:
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm run test
+
+  ci_rust:
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        run: cargo test --locked
+
+  ci_go:
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+          cache-dependency-path: go/go.sum
+      - name: Test
+        run: go test ./...
+
   pypi:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest

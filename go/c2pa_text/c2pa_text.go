@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"strings"
-	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
 )

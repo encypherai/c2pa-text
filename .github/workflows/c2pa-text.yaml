@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Test
-        run: cargo test --locked
+        run: cargo test
 
   ci_go:
     if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')

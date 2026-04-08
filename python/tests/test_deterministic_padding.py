@@ -7,6 +7,7 @@ decoder correctly extracts the manifest while ignoring padding bytes.
 
 import struct
 
+import pytest
 from c2pa_text import (
     MAGIC,
     VERSION,
@@ -101,7 +102,7 @@ class TestEncodeWrapperPadded:
         """Target below actual wrapper length should raise ValueError."""
         manifest = b"\xff" * 100
         too_small = 10
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             encode_wrapper_padded(manifest, too_small)
 
     def test_deterministic_across_hash_changes(self):

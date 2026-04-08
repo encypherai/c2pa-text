@@ -14,8 +14,8 @@ use unicode_normalization::UnicodeNormalization;
 
 pub mod validator;
 pub use validator::{
-    validate_jumbf_structure, validate_manifest, validate_wrapper_bytes,
-    ValidationCode, ValidationIssue, ValidationResult,
+    validate_jumbf_structure, validate_manifest, validate_wrapper_bytes, ValidationCode,
+    ValidationIssue, ValidationResult,
 };
 
 // ---------------------- Constants -------------------------------------------
@@ -144,7 +144,10 @@ fn compute_padding(gap: usize) -> Result<Vec<u8>, Error> {
 ///
 /// Decoders use `manifestLength` to extract the manifest and ignore trailing
 /// padding bytes.
-pub fn encode_wrapper_padded(manifest_bytes: &[u8], target_byte_length: usize) -> Result<String, Error> {
+pub fn encode_wrapper_padded(
+    manifest_bytes: &[u8],
+    target_byte_length: usize,
+) -> Result<String, Error> {
     let base = encode_wrapper(manifest_bytes);
     let actual = base.len(); // String::len() returns UTF-8 byte count
     if target_byte_length < actual {

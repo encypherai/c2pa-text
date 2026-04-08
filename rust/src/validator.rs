@@ -9,8 +9,7 @@ use std::fmt;
 const JUMBF_SUPERBOX_TYPE: &[u8; 4] = b"jumb";
 const JUMBF_DESC_TYPE: &[u8; 4] = b"jumd";
 const C2PA_MANIFEST_STORE_UUID: [u8; 16] = [
-    0x63, 0x32, 0x70, 0x61, 0x00, 0x11, 0x00, 0x10,
-    0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
+    0x63, 0x32, 0x70, 0x61, 0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
 ];
 
 /// C2PA-compliant validation status codes for text manifests.
@@ -302,7 +301,11 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
 /// Validate a C2PA manifest before embedding.
 ///
 /// This is the main validation entry point.
-pub fn validate_manifest(manifest_bytes: &[u8], validate_jumbf: bool, strict: bool) -> ValidationResult {
+pub fn validate_manifest(
+    manifest_bytes: &[u8],
+    validate_jumbf: bool,
+    strict: bool,
+) -> ValidationResult {
     let mut result = ValidationResult::new();
     result.manifest_bytes = Some(manifest_bytes.to_vec());
 
@@ -331,7 +334,7 @@ pub fn validate_manifest(manifest_bytes: &[u8], validate_jumbf: bool, strict: bo
 
 /// Validate a pre-encoded C2PATextManifestWrapper.
 pub fn validate_wrapper_bytes(wrapper_bytes: &[u8]) -> ValidationResult {
-    use crate::{MAGIC, VERSION, HEADER_SIZE};
+    use crate::{HEADER_SIZE, MAGIC, VERSION};
 
     let mut result = ValidationResult::new();
 

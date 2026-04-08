@@ -142,7 +142,7 @@ def encode_wrapper_padded(manifest_bytes: bytes, target_byte_length: int) -> str
     actual = len(base.encode("utf-8"))
     gap = target_byte_length - actual
     if gap < 0:
-        raise ValueError(f"target_byte_length ({target_byte_length}) is smaller than " f"actual wrapper byte length ({actual})")
+        raise ValueError(f"target_byte_length ({target_byte_length}) is smaller than actual wrapper byte length ({actual})")
     if gap == 0:
         return base
     padding_bytes = _compute_padding(gap)

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-04-08
+
+### Added
+- All SDKs (Python, TypeScript, Rust, Go): `encode_wrapper_padded()` produces
+  wrappers of exact, content-independent UTF-8 byte length using a 3a+4b
+  gap-filling algorithm with variation selector padding characters.
+- All SDKs: `worst_case_wrapper_byte_length()` computes the deterministic upper
+  bound for a given manifest byte count (`3 + (13 + M) * 4 + 6`).
+- Python: comprehensive test suite for deterministic padding covering formula
+  correctness, round-trip decodability, edge cases, and backward compatibility.
+
+### Notes
+- Deterministic padding breaks the hash-avalanche circularity in C2PA hard
+  binding computation, enabling single-pass manifest embedding without iterative
+  convergence loops.
+- Decoders remain backward-compatible: the `manifestLength` header field tells
+  decoders where the real manifest ends, so padding is ignored.
+
 ## [1.0.3] - 2026-01-26
 
 ### Changed

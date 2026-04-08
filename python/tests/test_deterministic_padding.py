@@ -8,6 +8,7 @@ decoder correctly extracts the manifest while ignoring padding bytes.
 import struct
 
 import pytest
+
 from c2pa_text import (
     MAGIC,
     VERSION,

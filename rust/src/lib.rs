@@ -68,9 +68,9 @@ fn byte_to_vs(byte: u8) -> char {
 
 fn vs_to_byte(c: char) -> Option<u8> {
     let code = c as u32;
-    if code >= VS_START && code <= VS_END {
+    if (VS_START..=VS_END).contains(&code) {
         Some((code - VS_START) as u8)
-    } else if code >= VS_SUP_START && code <= VS_SUP_END {
+    } else if (VS_SUP_START..=VS_SUP_END).contains(&code) {
         Some(((code - VS_SUP_START) + 16) as u8)
     } else {
         None
@@ -126,7 +126,7 @@ fn compute_padding(gap: usize) -> Result<Vec<u8>, Error> {
     let mut b = gap / 4;
     loop {
         let remainder = gap - 4 * b;
-        if remainder % 3 == 0 {
+        if remainder.is_multiple_of(3) {
             let a = remainder / 3;
             let mut result = vec![0x00u8; a];
             result.extend(vec![0xFFu8; b]);

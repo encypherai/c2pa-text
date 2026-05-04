@@ -36,3 +36,21 @@ go/bin/
 # OS
 .DS_Store
 Thumbs.db
+
+# Internal/sensitive content (must never reach public repos)
+*prd*
+PRDs/
+.teams/
+.questions/
+.claude/
+CLAUDE.md
+agents.md
+agents_linux.md
+TODO.md
+docs/company_internal_strategy/
+docs/drafts/
+docs/legal/
+docs/pricing/
+docs/sales/
+.secrets.baseline
+.mcp.json

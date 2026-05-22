@@ -1,27 +1,28 @@
 {
   "name": "c2pa-text",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Reference implementation for embedding C2PA manifests in text using Unicode variation selectors",
   "main": "dist/index.js",
-  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "default": "./dist/index.js"
     }
   },
   "files": [
-    "dist",
-    "src",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.test.*",
+    "src/**/*.ts",
+    "!src/**/*.test.*",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --project tsconfig.build.json",
     "test": "jest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && node -e \"require('./dist/index.js')\""
   },
   "keywords": [
     "c2pa",

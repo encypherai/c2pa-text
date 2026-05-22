@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-05-22
+
+### Fixed
+- TypeScript: removed phantom ESM entry points (`dist/index.mjs`) from
+  `exports` and `module` fields. The build produces CJS only; the prior
+  `import` condition pointed to a file that never existed, breaking
+  bundlers that follow the Node exports algorithm (rolldown, tsdown,
+  esbuild in ESM mode). Closes #8.
+- TypeScript: test files no longer ship in the npm tarball. Build now
+  uses a dedicated `tsconfig.build.json` that excludes `*.test.ts`, and
+  the `files` field uses negation patterns to filter test artifacts.
+- TypeScript: `prepublishOnly` now smoke-tests the CJS entry point
+  before `npm publish` can proceed.
+- CI: added export-map verification and dist-leak guard to the
+  TypeScript CI job.
+
 ## [1.1.0] - 2026-04-08
 
 ### Added

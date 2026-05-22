@@ -51,6 +51,14 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Verify exports resolve
+        run: node -e "const m = require('./dist/index.js'); if (!m.embedManifest) throw new Error('missing embedManifest export')"
+      - name: Verify no test files in dist
+        run: |
+          if ls dist/*.test.* 2>/dev/null; then
+            echo "::error::Test files leaked into dist/"
+            exit 1
+          fi
       - name: Test
         run: npm run test
 

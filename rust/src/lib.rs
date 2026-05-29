@@ -12,10 +12,12 @@
 use std::char;
 use unicode_normalization::UnicodeNormalization;
 
+pub mod html;
+pub mod structured;
 pub mod validator;
 pub use validator::{
-    validate_jumbf_structure, validate_manifest, validate_wrapper_bytes, ValidationCode,
-    ValidationIssue, ValidationResult,
+    validate_jumbf_structure, validate_manifest, validate_text, validate_wrapper_bytes,
+    ValidationCode, ValidationIssue, ValidationResult,
 };
 
 // ---------------------- Constants -------------------------------------------

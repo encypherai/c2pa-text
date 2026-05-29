@@ -15,6 +15,7 @@ from c2pa_text import (
     find_wrapper_info,
     validate_jumbf_structure,
     validate_manifest,
+    validate_text,
     validate_wrapper_bytes,
 )
 
@@ -145,15 +146,25 @@ class TestValidateWrapperBytes:
         assert not result.valid
         assert result.primary_code == ValidationCode.UNSUPPORTED_VERSION
 
-    def test_length_mismatch(self):
-        """Declared length not matching actual should fail."""
+    def test_length_mismatch_truncated(self):
+        """Declared length larger than actual triggers truncation error."""
         jumbf = struct.pack(">I", 8) + b"jumb"
-        # Declare 100 bytes but only have 8
+        # Declare 100 bytes but only provide 8
         header = struct.pack("!8sBI", MAGIC, VERSION, 100)
         wrapper = header + jumbf
         result = validate_wrapper_bytes(wrapper)
         assert not result.valid
         assert result.primary_code == ValidationCode.LENGTH_MISMATCH
+
+    def test_trailing_padding_accepted(self):
+        """Extra bytes after declared manifest length are padding, not an error."""
+        jumbf = struct.pack(">I", 8) + b"jumb"
+        header = struct.pack("!8sBI", MAGIC, VERSION, len(jumbf))
+        # Add 46 bytes of padding after the declared manifest
+        padding = b"\x00" * 46
+        wrapper = header + jumbf + padding
+        result = validate_wrapper_bytes(wrapper)
+        assert result.valid, f"Trailing padding should not cause failure: {result}"
 
 
 class TestValidationResult:
@@ -236,3 +247,104 @@ class TestWrapperOffsets:
         extracted2, clean = extract_manifest(embedded)
         assert extracted2 == jumbf
         assert clean == normalized_nfc
+
+
+class TestValidateText:
+    """Tests for validate_text() - full text asset validation."""
+
+    def _make_signed_text(self, text="Hello, World!"):
+        """Helper: create a signed text with a minimal valid JUMBF wrapper."""
+        jumbf = struct.pack(">I", 8) + b"jumb"
+        return embed_manifest(text, jumbf), jumbf
+
+    def test_plain_text_no_wrapper(self):
+        """Plain text with no wrapper is valid (wrapper is optional)."""
+        result = validate_text("Just plain text, no C2PA wrapper.")
+        assert result.valid
+        assert len(result.issues) == 0
+
+    def test_single_valid_wrapper(self):
+        """Text with one valid wrapper passes."""
+        signed, _ = self._make_signed_text()
+        result = validate_text(signed)
+        assert result.valid
+        assert len(result.issues) == 0
+
+    def test_multiple_wrappers_detected(self):
+        """Duplicating the wrapper triggers manifest.text.multipleWrappers."""
+        signed, jumbf = self._make_signed_text()
+        # Duplicate the wrapper at the end
+        from c2pa_text import encode_wrapper
+
+        doubled = signed + encode_wrapper(jumbf)
+        result = validate_text(doubled)
+        assert not result.valid
+        codes = [issue.code for issue in result.issues]
+        assert ValidationCode.MULTIPLE_WRAPPERS in codes
+
+    def test_corrupted_wrapper_detected(self):
+        """A wrapper with truncated JUMBF triggers a structural failure."""
+        # Build a wrapper that declares 100 bytes but has only 8
+        truncated_jumbf = struct.pack(">I", 100) + b"jumb"
+        header = struct.pack("!8sBI", MAGIC, VERSION, len(truncated_jumbf))
+        raw = header + truncated_jumbf
+        # Encode as VS
+        from c2pa_text import ZWNBSP, _byte_to_vs
+
+        wrapper_str = ZWNBSP + "".join(_byte_to_vs(b) for b in raw)
+        text_with_bad_wrapper = "Some text." + wrapper_str
+        result = validate_text(text_with_bad_wrapper)
+        assert not result.valid
+        codes = [issue.code for issue in result.issues]
+        assert ValidationCode.TRUNCATED_JUMBF in codes
+
+    def test_bad_magic_ignored(self):
+        """A VS block with wrong magic is not a C2PA wrapper - no error."""
+        from c2pa_text import ZWNBSP, _byte_to_vs
+
+        # Build something that looks like a wrapper but has wrong magic
+        bad_magic = b"NOTC2PA\0"
+        jumbf = struct.pack(">I", 8) + b"jumb"
+        header = struct.pack("!8sBI", bad_magic, VERSION, len(jumbf))
+        raw = header + jumbf
+        wrapper_str = ZWNBSP + "".join(_byte_to_vs(b) for b in raw)
+        text = "Some text." + wrapper_str
+        result = validate_text(text)
+        # Wrong magic means it is not recognized as a C2PA wrapper at all
+        assert result.valid
+
+    def test_bad_version_in_wrapper(self):
+        """A wrapper with unsupported version triggers unsupportedVersion."""
+        from c2pa_text import ZWNBSP, _byte_to_vs
+
+        jumbf = struct.pack(">I", 8) + b"jumb"
+        header = struct.pack("!8sBI", MAGIC, 99, len(jumbf))
+        raw = header + jumbf
+        wrapper_str = ZWNBSP + "".join(_byte_to_vs(b) for b in raw)
+        text = "Some text." + wrapper_str
+        result = validate_text(text)
+        assert not result.valid
+        codes = [issue.code for issue in result.issues]
+        assert ValidationCode.UNSUPPORTED_VERSION in codes
+
+    def test_length_mismatch_in_wrapper(self):
+        """A wrapper declaring more bytes than available triggers lengthMismatch."""
+        from c2pa_text import ZWNBSP, _byte_to_vs
+
+        jumbf = struct.pack(">I", 8) + b"jumb"
+        # Declare 50 bytes but only provide 8 (truncated)
+        header = struct.pack("!8sBI", MAGIC, VERSION, 50)
+        raw = header + jumbf
+        wrapper_str = ZWNBSP + "".join(_byte_to_vs(b) for b in raw)
+        text = "Some text." + wrapper_str
+        result = validate_text(text)
+        assert not result.valid
+        codes = [issue.code for issue in result.issues]
+        assert ValidationCode.LENGTH_MISMATCH in codes
+
+    def test_nfc_normalization_applied(self):
+        """Validation normalizes to NFC before scanning."""
+        decomposed = "e\u0301"  # e + combining acute
+        signed, _ = self._make_signed_text(decomposed)
+        result = validate_text(signed)
+        assert result.valid

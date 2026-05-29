@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#
+# c2pa-text pre-push hook: run the full cross-language test suite + golden parity
+# check before allowing a push, so PRs are validated against the stable state.
+#
+# Install with: ./tools/install-hooks.sh
+# Bypass once (not recommended) with: git push --no-verify
+
+set -euo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${HOOK_DIR}/.." && pwd)"
+
+echo "[pre-push] Running c2pa-text test suite (tools/test-all.sh)..."
+exec "${REPO_ROOT}/tools/test-all.sh"

@@ -391,11 +391,14 @@ pub fn validate_wrapper_bytes(wrapper_bytes: &[u8]) -> ValidationResult {
     let actual_jumbf_length = wrapper_bytes.len() - HEADER_SIZE;
     result.actual_length = Some(actual_jumbf_length);
 
-    if declared_length as usize != actual_jumbf_length {
+    // Actual bytes after header must be >= declared. Trailing bytes beyond
+    // manifestLength are padding (spec says decoders use manifestLength to
+    // extract the manifest and ignore trailing padding).
+    if (declared_length as usize) > actual_jumbf_length {
         result.add_issue(
             ValidationCode::LengthMismatch,
             format!(
-                "Length mismatch: declares {} bytes, actual {}",
+                "Length mismatch: declares {} bytes, only {} available (truncated)",
                 declared_length, actual_jumbf_length
             ),
             Some(9),
@@ -404,8 +407,8 @@ pub fn validate_wrapper_bytes(wrapper_bytes: &[u8]) -> ValidationResult {
         return result;
     }
 
-    // Validate JUMBF
-    let jumbf_bytes = &wrapper_bytes[HEADER_SIZE..];
+    // Extract the declared manifest bytes (ignore trailing padding)
+    let jumbf_bytes = &wrapper_bytes[HEADER_SIZE..HEADER_SIZE + declared_length as usize];
     result.jumbf_bytes = Some(jumbf_bytes.to_vec());
     result.manifest_bytes = Some(jumbf_bytes.to_vec());
 
@@ -413,6 +416,87 @@ pub fn validate_wrapper_bytes(wrapper_bytes: &[u8]) -> ValidationResult {
     if !jumbf_result.valid {
         result.issues.extend(jumbf_result.issues);
         result.valid = false;
+    }
+
+    result
+}
+
+/// Validate a text asset for C2PA text wrapper compliance.
+///
+/// Scans the full text for C2PA wrappers and reports structural issues:
+/// - Multiple wrappers (spec requires zero or one)
+/// - Corrupted, truncated, or malformed wrappers
+/// - Invalid magic bytes or unsupported version
+/// - JUMBF structural issues in the embedded manifest
+///
+/// Returns a [`ValidationResult`] with all issues found across all wrappers.
+pub fn validate_text(text: &str) -> ValidationResult {
+    use crate::{vs_to_byte, HEADER_SIZE, MAGIC, ZWNBSP};
+    use unicode_normalization::UnicodeNormalization;
+
+    let mut result = ValidationResult::new();
+    let normalized: String = text.nfc().collect();
+
+    // Scan for potential wrappers: ZWNBSP followed by variation selectors.
+    let chars: Vec<(usize, char)> = normalized.char_indices().collect();
+    let mut valid_wrappers: Vec<(usize, Vec<u8>)> = Vec::new(); // (char_index, raw_bytes)
+
+    let mut i = 0;
+    while i < chars.len() {
+        let (idx, c) = chars[i];
+        if c == ZWNBSP {
+            // Decode the VS sequence following the ZWNBSP.
+            let mut raw = Vec::new();
+            let mut j = i + 1;
+            while j < chars.len() {
+                if let Some(b) = vs_to_byte(chars[j].1) {
+                    raw.push(b);
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+
+            // Check for valid C2PA header.
+            if raw.len() >= HEADER_SIZE && &raw[0..8] == MAGIC {
+                valid_wrappers.push((idx, raw));
+            }
+
+            i = j;
+            continue;
+        }
+        i += 1;
+    }
+
+    if valid_wrappers.is_empty() {
+        // No wrapper found is valid (wrapper is optional per spec).
+        return result;
+    }
+
+    if valid_wrappers.len() > 1 {
+        // Compute byte offset of the second wrapper for diagnostics.
+        let second_start = valid_wrappers[1].0;
+        let byte_offset = normalized[..second_start].len();
+        result.add_issue(
+            ValidationCode::MultipleWrappers,
+            format!(
+                "Found {} valid C2PA text wrappers (spec requires at most one)",
+                valid_wrappers.len()
+            ),
+            Some(byte_offset),
+            None,
+        );
+    }
+
+    // Validate each wrapper structurally.
+    for (_char_idx, raw) in &valid_wrappers {
+        let wrapper_result = validate_wrapper_bytes(raw);
+        if !wrapper_result.valid {
+            for issue in wrapper_result.issues {
+                result.issues.push(issue);
+            }
+            result.valid = false;
+        }
     }
 
     result
@@ -454,5 +538,118 @@ mod tests {
         let result = validate_manifest(&truncated, true, false);
         assert!(!result.valid);
         assert_eq!(result.primary_code(), ValidationCode::TruncatedJumbf);
+    }
+
+    // ---------- validate_text tests ----------
+
+    #[test]
+    fn test_validate_text_plain_no_wrapper() {
+        let result = validate_text("Just plain text, no C2PA wrapper.");
+        assert!(result.valid);
+        assert!(result.issues.is_empty());
+    }
+
+    #[test]
+    fn test_validate_text_single_valid_wrapper() {
+        let jumbf = vec![0u8, 0, 0, 8, b'j', b'u', b'm', b'b'];
+        let signed = crate::embed_manifest("Hello, World!", &jumbf);
+        let result = validate_text(&signed);
+        assert!(
+            result.valid,
+            "Single valid wrapper should pass: {:?}",
+            result
+        );
+        assert!(result.issues.is_empty());
+    }
+
+    #[test]
+    fn test_validate_text_multiple_wrappers() {
+        let jumbf = vec![0u8, 0, 0, 8, b'j', b'u', b'm', b'b'];
+        let signed = crate::embed_manifest("Hello!", &jumbf);
+        let doubled = format!("{}{}", signed, crate::encode_wrapper(&jumbf));
+        let result = validate_text(&doubled);
+        assert!(!result.valid);
+        let codes: Vec<_> = result.issues.iter().map(|i| &i.code).collect();
+        assert!(
+            codes.contains(&&ValidationCode::MultipleWrappers),
+            "Expected MultipleWrappers, got {:?}",
+            codes
+        );
+    }
+
+    #[test]
+    fn test_validate_text_bad_version() {
+        use crate::{byte_to_vs, MAGIC, ZWNBSP};
+        let jumbf = vec![0u8, 0, 0, 8, b'j', b'u', b'm', b'b'];
+        let mut raw = Vec::new();
+        raw.extend_from_slice(MAGIC);
+        raw.push(99); // bad version
+        let len_bytes = (jumbf.len() as u32).to_be_bytes();
+        raw.extend_from_slice(&len_bytes);
+        raw.extend_from_slice(&jumbf);
+        let mut wrapper = String::new();
+        wrapper.push(ZWNBSP);
+        for &b in &raw {
+            wrapper.push(byte_to_vs(b));
+        }
+        let text = format!("Some text.{}", wrapper);
+        let result = validate_text(&text);
+        assert!(!result.valid);
+        let codes: Vec<_> = result.issues.iter().map(|i| &i.code).collect();
+        assert!(codes.contains(&&ValidationCode::UnsupportedVersion));
+    }
+
+    #[test]
+    fn test_validate_text_length_mismatch() {
+        use crate::{byte_to_vs, MAGIC, VERSION, ZWNBSP};
+        let jumbf = vec![0u8, 0, 0, 8, b'j', b'u', b'm', b'b'];
+        let mut raw = Vec::new();
+        raw.extend_from_slice(MAGIC);
+        raw.push(VERSION);
+        // Declare 50 bytes but only provide 8 (truncated).
+        let len_bytes = 50u32.to_be_bytes();
+        raw.extend_from_slice(&len_bytes);
+        raw.extend_from_slice(&jumbf);
+        let mut wrapper = String::new();
+        wrapper.push(ZWNBSP);
+        for &b in &raw {
+            wrapper.push(byte_to_vs(b));
+        }
+        let text = format!("Some text.{}", wrapper);
+        let result = validate_text(&text);
+        assert!(!result.valid);
+        let codes: Vec<_> = result.issues.iter().map(|i| &i.code).collect();
+        assert!(codes.contains(&&ValidationCode::LengthMismatch));
+    }
+
+    #[test]
+    fn test_validate_text_nfc_normalization() {
+        let jumbf = vec![0u8, 0, 0, 8, b'j', b'u', b'm', b'b'];
+        let decomposed = "e\u{0301}"; // e + combining acute
+        let signed = crate::embed_manifest(decomposed, &jumbf);
+        let result = validate_text(&signed);
+        assert!(result.valid);
+    }
+
+    #[test]
+    fn test_validate_text_bad_magic_ignored() {
+        use crate::{byte_to_vs, VERSION, ZWNBSP};
+        let bad_magic = b"NOTC2PA\0";
+        let jumbf = vec![0u8, 0, 0, 8, b'j', b'u', b'm', b'b'];
+        let mut raw = Vec::new();
+        raw.extend_from_slice(bad_magic);
+        raw.push(VERSION);
+        let len_bytes = (jumbf.len() as u32).to_be_bytes();
+        raw.extend_from_slice(&len_bytes);
+        raw.extend_from_slice(&jumbf);
+        let mut wrapper = String::new();
+        wrapper.push(ZWNBSP);
+        for &b in &raw {
+            wrapper.push(byte_to_vs(b));
+        }
+        let text = format!("Some text.{}", wrapper);
+        let result = validate_text(&text);
+        // Wrong magic means not recognized as a C2PA wrapper at all.
+        assert!(result.valid);
     }
 }

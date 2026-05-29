@@ -14,7 +14,42 @@ export {
   validateManifest,
   validateJumbfStructure,
   validateWrapperBytes,
+  validateText,
 } from './validator';
+
+// Re-export structured-text (Appendix A.9) embedding pipeline
+export {
+  BEGIN_DELIMITER,
+  END_DELIMITER,
+  DATA_URI_PREFIX,
+  Placement,
+  Method,
+  StructuredEmbed,
+  StructuredExtraction,
+  StructuredError,
+  encodeDataUri,
+  decodeDataUri,
+  buildManifestBlock,
+  buildManifestBlockMultiline,
+  embedStructured,
+  extractStructured,
+  recommendedMethod,
+} from './structured';
+
+// Re-export HTML (Appendix A.7) embedding pipeline
+export {
+  C2PA_MEDIA_TYPE,
+  MULTIPLE_MANIFESTS,
+  NO_HEAD,
+  HtmlError,
+  HtmlEmbed,
+  HtmlExtraction,
+  buildHtmlScript,
+  buildHtmlLink,
+  embedHtmlInline,
+  embedHtmlReference,
+  extractHtml,
+} from './html';
 
 // Constants
 const MAGIC = new Uint8Array([0x43, 0x32, 0x50, 0x41, 0x54, 0x58, 0x54, 0x00]); // "C2PATXT\0"

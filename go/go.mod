@@ -1,4 +1,4 @@
-module github.com/encypherai/c2pa-text/go
+module github.com/encypherai/c2pa-text/go/v2
 
 go 1.20
 

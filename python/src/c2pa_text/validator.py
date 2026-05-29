@@ -323,18 +323,21 @@ def validate_wrapper_bytes(wrapper_bytes: bytes) -> ValidationResult:
         )
         return result
 
-    # Validate length
+    # Validate length - actual bytes after header must be >= declared.
+    # Trailing bytes beyond manifestLength are padding (the spec says
+    # decoders use manifestLength to extract the manifest and ignore
+    # trailing padding).
     actual_jumbf_length = len(wrapper_bytes) - _HEADER_SIZE
-    if length != actual_jumbf_length:
+    if actual_jumbf_length < length:
         result.add_issue(
             ValidationCode.LENGTH_MISMATCH,
-            f"Length mismatch: declares {length} bytes, actual {actual_jumbf_length}",
+            f"Length mismatch: declares {length} bytes, only {actual_jumbf_length} available (truncated)",
             offset=9,
         )
         return result
 
-    # Extract and validate JUMBF
-    jumbf_bytes = wrapper_bytes[_HEADER_SIZE:]
+    # Extract the declared manifest bytes (ignore trailing padding)
+    jumbf_bytes = wrapper_bytes[_HEADER_SIZE : _HEADER_SIZE + length]
     result.jumbf_bytes = jumbf_bytes
     result.manifest_bytes = jumbf_bytes
 
@@ -342,6 +345,82 @@ def validate_wrapper_bytes(wrapper_bytes: bytes) -> ValidationResult:
     if not jumbf_result.valid:
         result.issues.extend(jumbf_result.issues)
         result.valid = False
+
+    return result
+
+
+def validate_text(text: str) -> ValidationResult:
+    """
+    Validate a text asset for C2PA text wrapper compliance.
+
+    Scans the full text for C2PA wrappers and reports structural issues:
+    - Multiple wrappers (spec requires zero or one)
+    - Corrupted, truncated, or malformed wrappers
+    - Invalid magic bytes or unsupported version
+    - JUMBF structural issues in the embedded manifest
+
+    This is the recommended validation entry point for text assets.
+    It combines wrapper-count validation with per-wrapper structural checks.
+
+    Args:
+        text: The text to validate (NFC normalization applied internally).
+
+    Returns:
+        ValidationResult with all issues found across all wrappers.
+    """
+    import re
+    import unicodedata
+
+    from . import MAGIC, VERSION, ZWNBSP, _HEADER_SIZE, _HEADER_STRUCT, _VS_CHAR_CLASS, decode_wrapper_sequence
+
+    result = ValidationResult(valid=True)
+    normalized = unicodedata.normalize("NFC", text)
+
+    # Find all potential wrappers (ZWNBSP followed by variation selectors)
+    pattern = re.compile(re.escape(ZWNBSP) + f"({_VS_CHAR_CLASS}+)")
+    matches = list(pattern.finditer(normalized))
+
+    if not matches:
+        # No wrapper found is valid (wrapper is optional per spec)
+        return result
+
+    # Decode each match and check for valid C2PA headers
+    valid_wrappers: List[tuple] = []  # (match_index, raw_bytes, match_obj)
+    for i, m in enumerate(matches):
+        seq = m.group(1)
+        try:
+            raw = decode_wrapper_sequence(seq)
+        except ValueError:
+            # Not a valid VS sequence - skip
+            continue
+
+        if len(raw) < _HEADER_SIZE:
+            continue
+
+        magic, version, length = _HEADER_STRUCT.unpack(raw[:_HEADER_SIZE])
+        if magic != MAGIC:
+            continue
+        # This has a valid C2PA magic - it counts as a wrapper
+        valid_wrappers.append((i, raw, m))
+
+    if len(valid_wrappers) == 0:
+        # Found VS sequences but none with valid C2PA magic
+        return result
+
+    if len(valid_wrappers) > 1:
+        byte_offset = len(normalized[: valid_wrappers[1][2].start()].encode("utf-8"))
+        result.add_issue(
+            ValidationCode.MULTIPLE_WRAPPERS,
+            f"Found {len(valid_wrappers)} valid C2PA text wrappers (spec requires at most one)",
+            offset=byte_offset,
+        )
+
+    # Validate each wrapper structurally
+    for _idx, raw, _match in valid_wrappers:
+        wrapper_result = validate_wrapper_bytes(raw)
+        if not wrapper_result.valid:
+            result.issues.extend(wrapper_result.issues)
+            result.valid = False
 
     return result
 

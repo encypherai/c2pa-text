@@ -39,10 +39,7 @@ class TestDataUri:
 
 class TestBlockFormat:
     def test_single_line_no_suffix(self):
-        assert (
-            build_manifest_block("https://x/m.c2pa", "#")
-            == "# -----BEGIN C2PA MANIFEST----- https://x/m.c2pa -----END C2PA MANIFEST-----"
-        )
+        assert build_manifest_block("https://x/m.c2pa", "#") == "# -----BEGIN C2PA MANIFEST----- https://x/m.c2pa -----END C2PA MANIFEST-----"
 
     def test_single_line_with_suffix(self):
         assert (
@@ -51,24 +48,17 @@ class TestBlockFormat:
         )
 
     def test_multiline(self):
-        assert (
-            build_manifest_block_multiline("https://x/m.c2pa")
-            == "-----BEGIN C2PA MANIFEST-----\nhttps://x/m.c2pa\n-----END C2PA MANIFEST-----"
-        )
+        assert build_manifest_block_multiline("https://x/m.c2pa") == "-----BEGIN C2PA MANIFEST-----\nhttps://x/m.c2pa\n-----END C2PA MANIFEST-----"
 
 
 class TestEmbed:
     def test_start_placement_exclusion_and_round_trip(self):
         block = "# -----BEGIN C2PA MANIFEST----- https://x/m.c2pa -----END C2PA MANIFEST-----"
-        r = embed_structured(
-            "body line 1\nbody line 2\n", "https://x/m.c2pa", "#", placement=Placement.START
-        )
+        r = embed_structured("body line 1\nbody line 2\n", "https://x/m.c2pa", "#", placement=Placement.START)
         assert r.text == f"{block}\nbody line 1\nbody line 2\n"
         assert r.exclusion_start == 0
         assert r.exclusion_length == len((block + "\n").encode("utf-8"))
-        excluded = r.text.encode("utf-8")[
-            r.exclusion_start : r.exclusion_start + r.exclusion_length
-        ]
+        excluded = r.text.encode("utf-8")[r.exclusion_start : r.exclusion_start + r.exclusion_length]
         assert excluded == (block + "\n").encode("utf-8")
         x = extract_structured(r.text)
         assert x.reference == "https://x/m.c2pa"
@@ -81,9 +71,7 @@ class TestEmbed:
         assert r.text == f"{text}\n{block}"
         assert r.exclusion_start == len(text.encode("utf-8"))
         assert r.exclusion_length == len(("\n" + block).encode("utf-8"))
-        excluded = r.text.encode("utf-8")[
-            r.exclusion_start : r.exclusion_start + r.exclusion_length
-        ]
+        excluded = r.text.encode("utf-8")[r.exclusion_start : r.exclusion_start + r.exclusion_length]
         assert excluded == ("\n" + block).encode("utf-8")
 
     def test_embed_and_extract_data_uri(self):
@@ -118,10 +106,7 @@ class TestExtractErrors:
         assert e.value.code == "manifest.structuredText.emptyReference"
 
     def test_multiple_references(self):
-        two = (
-            f"# {BEGIN_DELIMITER} a {END_DELIMITER}\n"
-            f"# {BEGIN_DELIMITER} b {END_DELIMITER}"
-        )
+        two = f"# {BEGIN_DELIMITER} a {END_DELIMITER}\n# {BEGIN_DELIMITER} b {END_DELIMITER}"
         with pytest.raises(StructuredError) as e:
             extract_structured(two)
         assert e.value.code == "manifest.structuredText.multipleReferences"
@@ -129,14 +114,7 @@ class TestExtractErrors:
 
 class TestFrontMatter:
     def test_front_matter_extracts(self):
-        doc = (
-            "---\n"
-            "-----BEGIN C2PA MANIFEST-----\n"
-            "https://x/m.c2pa\n"
-            "-----END C2PA MANIFEST-----\n"
-            "title: Doc\n"
-            "---\nbody\n"
-        )
+        doc = "---\n-----BEGIN C2PA MANIFEST-----\nhttps://x/m.c2pa\n-----END C2PA MANIFEST-----\ntitle: Doc\n---\nbody\n"
         x = extract_structured(doc)
         assert x.reference == "https://x/m.c2pa"
 

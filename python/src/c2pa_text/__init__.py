@@ -15,15 +15,16 @@ import struct
 import unicodedata
 from typing import Optional, Tuple
 
-# Import validation utilities
-from .validator import (
-    ValidationCode,
-    ValidationIssue,
-    ValidationResult,
-    validate_jumbf_structure,
-    validate_manifest,
-    validate_text,
-    validate_wrapper_bytes,
+# Import HTML (Appendix A.7) embedding pipeline
+from .html import (
+    HtmlEmbed,
+    HtmlError,
+    HtmlExtraction,
+    build_html_link,
+    build_html_script,
+    embed_html_inline,
+    embed_html_reference,
+    extract_html,
 )
 
 # Import structured-text (Appendix A.9) embedding pipeline
@@ -45,16 +46,15 @@ from .structured import (
     recommended_method,
 )
 
-# Import HTML (Appendix A.7) embedding pipeline
-from .html import (
-    HtmlEmbed,
-    HtmlError,
-    HtmlExtraction,
-    build_html_link,
-    build_html_script,
-    embed_html_inline,
-    embed_html_reference,
-    extract_html,
+# Import validation utilities
+from .validator import (
+    ValidationCode,
+    ValidationIssue,
+    ValidationResult,
+    validate_jumbf_structure,
+    validate_manifest,
+    validate_text,
+    validate_wrapper_bytes,
 )
 
 # ---------------------- Constants -------------------------------------------

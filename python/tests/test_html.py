@@ -20,9 +20,7 @@ HTML = (
     "<body>\n<p>Content here.</p>\n</body>\n</html>\n"
 )
 
-GOLDEN = json.loads(
-    (Path(__file__).resolve().parents[2] / "golden" / "vectors.json").read_text(encoding="utf-8")
-)
+GOLDEN = json.loads((Path(__file__).resolve().parents[2] / "golden" / "vectors.json").read_text(encoding="utf-8"))
 
 
 def _hex(s: str) -> str:
@@ -31,16 +29,10 @@ def _hex(s: str) -> str:
 
 class TestBuilders:
     def test_script(self):
-        assert (
-            build_html_script(bytes([0xDE, 0xAD, 0xBE, 0xEF]))
-            == '<script type="application/c2pa">3q2+7w==</script>'
-        )
+        assert build_html_script(bytes([0xDE, 0xAD, 0xBE, 0xEF])) == '<script type="application/c2pa">3q2+7w==</script>'
 
     def test_link(self):
-        assert (
-            build_html_link("https://x/m.c2pa")
-            == '<link rel="c2pa-manifest" href="https://x/m.c2pa" type="application/c2pa">'
-        )
+        assert build_html_link("https://x/m.c2pa") == '<link rel="c2pa-manifest" href="https://x/m.c2pa" type="application/c2pa">'
 
 
 class TestInline:
@@ -49,9 +41,7 @@ class TestInline:
         r = embed_html_inline(HTML, manifest)
         element = '<script type="application/c2pa">3q2+7w==</script>'
         # Exclusion covers exactly the inserted <script> element.
-        excluded = r.html.encode("utf-8")[
-            r.exclusion_start : r.exclusion_start + r.exclusion_length
-        ]
+        excluded = r.html.encode("utf-8")[r.exclusion_start : r.exclusion_start + r.exclusion_length]
         assert excluded == element.encode("utf-8")
         # Element sits inside the head, before </head>.
         assert element + "\n</head>" in r.html

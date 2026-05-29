@@ -21,7 +21,6 @@ from __future__ import annotations
 import base64
 import binascii
 from dataclasses import dataclass
-from typing import List, Optional
 
 C2PA_MEDIA_TYPE = "application/c2pa"
 SCRIPT_OPEN = '<script type="application/c2pa">'
@@ -63,9 +62,9 @@ class HtmlExtraction:
 
     method: str
     """Either ``"inline"`` (script element) or ``"reference"`` (link element)."""
-    manifest: Optional[bytes]
+    manifest: bytes | None
     """Decoded Manifest Store bytes, present only for the inline method."""
-    reference: Optional[str]
+    reference: str | None
     """External manifest URL, present only for the reference method."""
 
 
@@ -112,11 +111,11 @@ def embed_html_reference(html: str, url: str, newline: str = "\n") -> str:
     return html[:idx] + element + newline + html[idx:]
 
 
-def _find_script_contents(html: str) -> List[str]:
+def _find_script_contents(html: str) -> list[str]:
     """Return the text content of every ``<script type="application/c2pa">``
     element (form-tolerant: any attribute order, as long as the marker attribute
     is present in the opening tag)."""
-    results: List[str] = []
+    results: list[str] = []
     pos = 0
     while True:
         i = html.find("<script", pos)
@@ -136,9 +135,9 @@ def _find_script_contents(html: str) -> List[str]:
     return results
 
 
-def _find_link_tags(html: str) -> List[str]:
+def _find_link_tags(html: str) -> list[str]:
     """Return every ``<link ... rel="c2pa-manifest" ...>`` opening tag."""
-    results: List[str] = []
+    results: list[str] = []
     pos = 0
     while True:
         i = html.find("<link", pos)
@@ -154,7 +153,7 @@ def _find_link_tags(html: str) -> List[str]:
     return results
 
 
-def _href(tag: str) -> Optional[str]:
+def _href(tag: str) -> str | None:
     marker = 'href="'
     i = tag.find(marker)
     if i == -1:
@@ -166,7 +165,7 @@ def _href(tag: str) -> Optional[str]:
     return tag[start:end]
 
 
-def extract_html(html: str) -> Optional[HtmlExtraction]:
+def extract_html(html: str) -> HtmlExtraction | None:
     """Extract a manifest association from an HTML document (spec A.7.1.4).
 
     Returns ``None`` if no C2PA association is present. Raises
@@ -183,7 +182,7 @@ def extract_html(html: str) -> Optional[HtmlExtraction]:
     if scripts:
         content = scripts[0].strip()
         try:
-            manifest: Optional[bytes] = base64.b64decode(content, validate=True)
+            manifest: bytes | None = base64.b64decode(content, validate=True)
         except (binascii.Error, ValueError):
             manifest = None
         return HtmlExtraction(method="inline", manifest=manifest, reference=None)

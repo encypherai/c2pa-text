@@ -23,9 +23,7 @@ from c2pa_text import (
     extract_structured,
 )
 
-GOLDEN = json.loads(
-    (Path(__file__).resolve().parents[2] / "golden" / "vectors.json").read_text(encoding="utf-8")
-)
+GOLDEN = json.loads((Path(__file__).resolve().parents[2] / "golden" / "vectors.json").read_text(encoding="utf-8"))
 
 
 def _hex(s: str) -> str:
@@ -41,10 +39,7 @@ def test_golden_data_uri(v):
 
 @pytest.mark.parametrize("v", GOLDEN["structured_block"], ids=lambda v: v["name"])
 def test_golden_structured_block(v):
-    assert (
-        build_manifest_block(v["reference"], v["comment_prefix"], v["comment_suffix"])
-        == v["expected_block"]
-    )
+    assert build_manifest_block(v["reference"], v["comment_prefix"], v["comment_suffix"]) == v["expected_block"]
 
 
 @pytest.mark.parametrize("v", GOLDEN["structured_multiline"], ids=lambda v: v["name"])

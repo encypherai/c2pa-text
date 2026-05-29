@@ -32,7 +32,6 @@ import base64
 import binascii
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 # Fixed ASCII Armour-style delimiters (spec A.9.3).
 BEGIN_DELIMITER = "-----BEGIN C2PA MANIFEST-----"
@@ -83,7 +82,7 @@ class StructuredExtraction:
 
     reference: str
     """The manifest reference between the delimiters (URL or ``data:`` URI), trimmed."""
-    manifest: Optional[bytes]
+    manifest: bytes | None
     """Decoded Manifest Store bytes -- present only when ``reference`` is a
     ``data:application/c2pa;base64,...`` URI with a valid Base64 payload."""
 
@@ -107,23 +106,21 @@ def encode_data_uri(manifest_bytes: bytes) -> str:
     return DATA_URI_PREFIX + base64.b64encode(manifest_bytes).decode("ascii")
 
 
-def decode_data_uri(reference: str) -> Optional[bytes]:
+def decode_data_uri(reference: str) -> bytes | None:
     """Decode a ``data:application/c2pa;base64,...`` reference into Manifest Store
     bytes. Returns ``None`` if ``reference`` is not such a ``data:`` URI or the
     Base64 payload is invalid.
     """
     if not reference.startswith(DATA_URI_PREFIX):
         return None
-    payload = reference[len(DATA_URI_PREFIX):].strip()
+    payload = reference[len(DATA_URI_PREFIX) :].strip()
     try:
         return base64.b64decode(payload, validate=True)
     except (binascii.Error, ValueError):
         return None
 
 
-def build_manifest_block(
-    reference: str, comment_prefix: str, comment_suffix: str = ""
-) -> str:
+def build_manifest_block(reference: str, comment_prefix: str, comment_suffix: str = "") -> str:
     """Build a single-line manifest block (spec A.9.3.1)::
 
         <comment_prefix> -----BEGIN C2PA MANIFEST----- <reference> -----END C2PA MANIFEST----- <comment_suffix>
@@ -239,7 +236,7 @@ _RECOMMENDED = {
 }
 
 
-def recommended_method(mime: str) -> Optional[Method]:
+def recommended_method(mime: str) -> Method | None:
     """Advisory recommendation of an embedding method for a media type, per the
     C2PA 2.4 spec text families. Returns ``None`` for media types with no defined
     text embedding method. Informative only -- see module docs.

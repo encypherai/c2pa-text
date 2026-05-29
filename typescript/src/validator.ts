@@ -335,17 +335,20 @@ export function validateWrapperBytes(wrapperBytes: Uint8Array): ValidationResult
   const actualJumbfLength = wrapperBytes.length - HEADER_SIZE;
   result.actualLength = actualJumbfLength;
 
-  if (declaredLength !== actualJumbfLength) {
+  // Actual bytes after header must be >= declared. Trailing bytes beyond
+  // manifestLength are padding (spec says decoders use manifestLength to
+  // extract the manifest and ignore trailing padding).
+  if (declaredLength > actualJumbfLength) {
     addIssue(
       ValidationCode.LengthMismatch,
-      `Length mismatch: declares ${declaredLength} bytes, actual ${actualJumbfLength}`,
+      `Length mismatch: declares ${declaredLength} bytes, only ${actualJumbfLength} available (truncated)`,
       9
     );
     return result;
   }
 
-  // Validate JUMBF
-  const jumbfBytes = wrapperBytes.slice(HEADER_SIZE);
+  // Extract the declared manifest bytes (ignore trailing padding)
+  const jumbfBytes = wrapperBytes.slice(HEADER_SIZE, HEADER_SIZE + declaredLength);
   result.jumbfBytes = jumbfBytes;
   result.manifestBytes = jumbfBytes;
 
@@ -353,6 +356,118 @@ export function validateWrapperBytes(wrapperBytes: Uint8Array): ValidationResult
   if (!jumbfResult.valid) {
     result.issues.push(...jumbfResult.issues);
     result.valid = false;
+  }
+
+  return result;
+}
+
+// Variation Selector ranges (duplicated from index.ts for self-containment)
+const VS_START = 0xFE00;
+const VS_END = 0xFE0F;
+const VS_SUP_START = 0xE0100;
+const VS_SUP_END = 0xE01EF;
+const ZWNBSP = '\uFEFF';
+
+function vsToByte(codepoint: number): number | null {
+  if (codepoint >= VS_START && codepoint <= VS_END) {
+    return codepoint - VS_START;
+  }
+  if (codepoint >= VS_SUP_START && codepoint <= VS_SUP_END) {
+    return (codepoint - VS_SUP_START) + 16;
+  }
+  return null;
+}
+
+/**
+ * Validate a text asset for C2PA text wrapper compliance.
+ *
+ * Scans the full text for C2PA wrappers and reports structural issues:
+ * - Multiple wrappers (spec requires zero or one)
+ * - Corrupted, truncated, or malformed wrappers
+ * - Invalid magic bytes or unsupported version
+ * - JUMBF structural issues in the embedded manifest
+ *
+ * This is the recommended validation entry point for text assets.
+ */
+export function validateText(text: string): ValidationResult {
+  const result: ValidationResult = {
+    valid: true,
+    issues: [],
+  };
+
+  const normalized = text.normalize('NFC');
+
+  // Scan for potential wrappers: ZWNBSP followed by variation selectors.
+  interface WrapperMatch {
+    charIndex: number;
+    raw: Uint8Array;
+  }
+  const validWrappers: WrapperMatch[] = [];
+
+  let i = 0;
+  while (i < normalized.length) {
+    if (normalized[i] === ZWNBSP) {
+      const rawBytes: number[] = [];
+      let j = i + 1;
+
+      while (j < normalized.length) {
+        const code = normalized.codePointAt(j);
+        if (code === undefined) break;
+
+        const byte = vsToByte(code);
+        if (byte === null) break;
+
+        rawBytes.push(byte);
+        j += (code > 0xFFFF) ? 2 : 1;
+      }
+
+      // Check for valid C2PA header (magic bytes match).
+      if (rawBytes.length >= HEADER_SIZE) {
+        let magicMatch = true;
+        for (let k = 0; k < 8; k++) {
+          if (rawBytes[k] !== MAGIC[k]) {
+            magicMatch = false;
+            break;
+          }
+        }
+        if (magicMatch) {
+          validWrappers.push({
+            charIndex: i,
+            raw: new Uint8Array(rawBytes),
+          });
+        }
+      }
+
+      i = j;
+      continue;
+    }
+    i++;
+  }
+
+  if (validWrappers.length === 0) {
+    // No wrapper found is valid (wrapper is optional per spec).
+    return result;
+  }
+
+  if (validWrappers.length > 1) {
+    const byteOffset = new TextEncoder().encode(
+      normalized.substring(0, validWrappers[1].charIndex)
+    ).length;
+    result.issues.push({
+      code: ValidationCode.MultipleWrappers,
+      message: `Found ${validWrappers.length} valid C2PA text wrappers (spec requires at most one)`,
+      offset: byteOffset,
+    });
+    result.valid = false;
+  }
+
+  // Validate each wrapper structurally.
+  for (const wrapper of validWrappers) {
+    const wrapperResult = validateWrapperBytes(wrapper.raw);
+    if (!wrapperResult.valid) {
+      result.issues.push(...wrapperResult.issues);
+      result.valid = false;
+    }
   }
 
   return result;

@@ -1,0 +1,7 @@
+# Pin the Rust toolchain so `cargo fmt`/`clippy`/`test` are deterministic across
+# every contributor machine and CI. This prevents a silent stable rustfmt bump
+# from turning `cargo fmt --check` red (as happened with rustfmt 1.9.0). Bump
+# this deliberately when adopting a newer toolchain.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]

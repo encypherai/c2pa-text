@@ -1,0 +1,51 @@
+{
+  "_comment": [
+    "ILLUSTRATIVE FIXTURE ONLY -- not a signed or validated manifest.",
+    "This shows the human-readable Content Credentials JSON (crJSON) view of the",
+    "kind of C2PA Manifest Store that c2pa-text embeds into a text asset. c2pa-text",
+    "is manifest-agnostic: it embeds the opaque binary JUMBF Manifest Store (or a URL",
+    "to one) -- see manifest_store.bin and golden/samples/. The hash and signature",
+    "values below are placeholders and are NOT cryptographically valid.",
+    "crJSON format: https://spec.c2pa.org/ (Content Credentials JSON)."
+  ],
+  "active_manifest": "urn:c2pa:8f3a1c2e-0b6d-4a2f-9e7c-1d2b3a4c5d6e",
+  "manifests": {
+    "urn:c2pa:8f3a1c2e-0b6d-4a2f-9e7c-1d2b3a4c5d6e": {
+      "claim_generator": "c2pa-text/1.3.0 (Encypher)",
+      "claim_generator_info": [
+        { "name": "c2pa-text", "version": "1.3.0" }
+      ],
+      "format": "text/plain",
+      "instance_id": "xmp:iid:7b9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
+      "title": "note.txt",
+      "assertions": [
+        {
+          "label": "c2pa.actions.v2",
+          "data": {
+            "actions": [
+              {
+                "action": "c2pa.created",
+                "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture",
+                "softwareAgent": { "name": "c2pa-text", "version": "1.3.0" }
+              }
+            ]
+          }
+        },
+        {
+          "label": "c2pa.hash.data",
+          "data": {
+            "alg": "sha256",
+            "exclusions": [{ "start": 39, "length": 1129 }],
+            "hash": "PLACEHOLDER_BASE64_SHA256_OVER_TEXT_WITH_WRAPPER_EXCLUDED="
+          }
+        }
+      ],
+      "signature_info": {
+        "alg": "Es256",
+        "issuer": "Encypher Corporation",
+        "cert_serial_number": "PLACEHOLDER",
+        "time": "2026-05-29T00:00:00Z"
+      }
+    }
+  }
+}

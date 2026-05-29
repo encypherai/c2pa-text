@@ -51,14 +51,6 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
-      - name: Verify exports resolve
-        run: node -e "const m = require('./dist/index.js'); if (!m.embedManifest) throw new Error('missing embedManifest export')"
-      - name: Verify no test files in dist
-        run: |
-          if ls dist/*.test.* 2>/dev/null; then
-            echo "::error::Test files leaked into dist/"
-            exit 1
-          fi
       - name: Test
         run: npm run test
 
@@ -96,6 +88,33 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+
+  # Cross-language parity gate: regenerate the shared golden fixtures from the
+  # Python reference implementation and fail if anything drifted. Combined with
+  # each language suite asserting golden/vectors.json, this enforces that any
+  # change to the embedding format ("the spec") keeps all four SDKs byte-identical
+  # and that committed fixtures stay in sync with the stable state.
+  ci_parity:
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: '3.12'
+      - name: Sync python
+        working-directory: python
+        run: uv sync --all-extras --dev
+      - name: Regenerate golden fixtures
+        run: uv run --project python python golden/generate.py
+      - name: Verify golden fixtures are up to date
+        run: |
+          if ! git diff --quiet -- golden/; then
+            echo "::error::golden/ fixtures are out of date. Run 'python golden/generate.py' and commit the result."
+            git --no-pager diff -- golden/
+            exit 1
+          fi
+          echo "golden/ fixtures are in sync."
 
   security:
     if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')

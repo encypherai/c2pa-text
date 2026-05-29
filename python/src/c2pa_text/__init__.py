@@ -22,7 +22,39 @@ from .validator import (
     ValidationResult,
     validate_jumbf_structure,
     validate_manifest,
+    validate_text,
     validate_wrapper_bytes,
+)
+
+# Import structured-text (Appendix A.9) embedding pipeline
+from .structured import (
+    BEGIN_DELIMITER,
+    DATA_URI_PREFIX,
+    END_DELIMITER,
+    Method,
+    Placement,
+    StructuredEmbed,
+    StructuredError,
+    StructuredExtraction,
+    build_manifest_block,
+    build_manifest_block_multiline,
+    decode_data_uri,
+    embed_structured,
+    encode_data_uri,
+    extract_structured,
+    recommended_method,
+)
+
+# Import HTML (Appendix A.7) embedding pipeline
+from .html import (
+    HtmlEmbed,
+    HtmlError,
+    HtmlExtraction,
+    build_html_link,
+    build_html_script,
+    embed_html_inline,
+    embed_html_reference,
+    extract_html,
 )
 
 # ---------------------- Constants -------------------------------------------
@@ -269,6 +301,7 @@ __all__ = [
     "decode_wrapper_sequence",
     # Validation
     "validate_manifest",
+    "validate_text",
     "validate_jumbf_structure",
     "validate_wrapper_bytes",
     "ValidationCode",
@@ -278,4 +311,29 @@ __all__ = [
     "MAGIC",
     "VERSION",
     "ZWNBSP",
+    # Structured text (Appendix A.9)
+    "embed_structured",
+    "extract_structured",
+    "build_manifest_block",
+    "build_manifest_block_multiline",
+    "encode_data_uri",
+    "decode_data_uri",
+    "recommended_method",
+    "Placement",
+    "Method",
+    "StructuredEmbed",
+    "StructuredExtraction",
+    "StructuredError",
+    "BEGIN_DELIMITER",
+    "END_DELIMITER",
+    "DATA_URI_PREFIX",
+    # HTML (Appendix A.7)
+    "embed_html_inline",
+    "embed_html_reference",
+    "extract_html",
+    "build_html_script",
+    "build_html_link",
+    "HtmlEmbed",
+    "HtmlExtraction",
+    "HtmlError",
 ]

@@ -3,6 +3,8 @@ package c2pa_text
 import (
 	"encoding/binary"
 	"fmt"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // JUMBF Constants (ISO/IEC 19566-5)
@@ -294,17 +296,20 @@ func ValidateWrapperBytes(wrapperBytes []byte) *ValidationResult {
 	actualJumbfLength := len(wrapperBytes) - HeaderSize
 	result.ActualLength = actualJumbfLength
 
-	if int(declaredLength) != actualJumbfLength {
+	// Actual bytes after header must be >= declared. Trailing bytes beyond
+	// manifestLength are padding (spec says decoders use manifestLength to
+	// extract the manifest and ignore trailing padding).
+	if int(declaredLength) > actualJumbfLength {
 		result.AddIssue(
 			ValidationCodeLengthMismatch,
-			fmt.Sprintf("Length mismatch: declares %d bytes, actual %d", declaredLength, actualJumbfLength),
+			fmt.Sprintf("Length mismatch: declares %d bytes, only %d available (truncated)", declaredLength, actualJumbfLength),
 			9, "",
 		)
 		return result
 	}
 
-	// Validate JUMBF
-	jumbfBytes := wrapperBytes[HeaderSize:]
+	// Extract the declared manifest bytes (ignore trailing padding)
+	jumbfBytes := wrapperBytes[HeaderSize : HeaderSize+int(declaredLength)]
 	result.JumbfBytes = jumbfBytes
 	result.ManifestBytes = jumbfBytes
 
@@ -312,6 +317,92 @@ func ValidateWrapperBytes(wrapperBytes []byte) *ValidationResult {
 	if !jumbfResult.Valid {
 		result.Issues = append(result.Issues, jumbfResult.Issues...)
 		result.Valid = false
+	}
+
+	return result
+}
+
+// ValidateText validates a text asset for C2PA text wrapper compliance.
+//
+// Scans the full text for C2PA wrappers and reports structural issues:
+//   - Multiple wrappers (spec requires zero or one)
+//   - Corrupted, truncated, or malformed wrappers
+//   - Invalid magic bytes or unsupported version
+//   - JUMBF structural issues in the embedded manifest
+//
+// This is the recommended validation entry point for text assets.
+func ValidateText(text string) *ValidationResult {
+	result := NewValidationResult()
+
+	normalized := norm.NFC.String(text)
+	runes := []rune(normalized)
+
+	type wrapperMatch struct {
+		charIndex int
+		raw       []byte
+	}
+	var validWrappers []wrapperMatch
+
+	i := 0
+	for i < len(runes) {
+		if runes[i] == ZWNBSP {
+			var rawBytes []byte
+			j := i + 1
+
+			for j < len(runes) {
+				b, ok := vsToByte(runes[j])
+				if !ok {
+					break
+				}
+				rawBytes = append(rawBytes, b)
+				j++
+			}
+
+			// Check for valid C2PA header (magic bytes match)
+			if len(rawBytes) >= HeaderSize {
+				magicMatch := true
+				for k := 0; k < 8; k++ {
+					if rawBytes[k] != Magic[k] {
+						magicMatch = false
+						break
+					}
+				}
+				if magicMatch {
+					validWrappers = append(validWrappers, wrapperMatch{
+						charIndex: i,
+						raw:       rawBytes,
+					})
+				}
+			}
+
+			i = j
+			continue
+		}
+		i++
+	}
+
+	if len(validWrappers) == 0 {
+		// No wrapper found is valid (wrapper is optional per spec).
+		return result
+	}
+
+	if len(validWrappers) > 1 {
+		// Convert rune index of second wrapper to byte offset
+		byteOffset := len(string(runes[:validWrappers[1].charIndex]))
+		result.AddIssue(
+			ValidationCodeMultipleWrappers,
+			fmt.Sprintf("Found %d valid C2PA text wrappers (spec requires at most one)", len(validWrappers)),
+			byteOffset, "",
+		)
+	}
+
+	// Validate each wrapper structurally
+	for _, w := range validWrappers {
+		wrapperResult := ValidateWrapperBytes(w.raw)
+		if !wrapperResult.Valid {
+			result.Issues = append(result.Issues, wrapperResult.Issues...)
+			result.Valid = false
+		}
 	}
 
 	return result

@@ -371,7 +371,7 @@ def validate_text(text: str) -> ValidationResult:
     import re
     import unicodedata
 
-    from . import MAGIC, VERSION, ZWNBSP, _HEADER_SIZE, _HEADER_STRUCT, _VS_CHAR_CLASS, decode_wrapper_sequence
+    from . import _HEADER_SIZE, _HEADER_STRUCT, _VS_CHAR_CLASS, MAGIC, ZWNBSP, decode_wrapper_sequence
 
     result = ValidationResult(valid=True)
     normalized = unicodedata.normalize("NFC", text)

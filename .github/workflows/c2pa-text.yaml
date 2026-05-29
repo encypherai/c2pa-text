@@ -195,6 +195,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
           cache: npm
           cache-dependency-path: typescript/package-lock.json
       - name: Install
@@ -204,9 +205,8 @@ jobs:
       - name: Use latest npm (OIDC trusted publishing requires npm >= 11.5.1)
         run: npm install -g npm@latest
       - name: Publish to npm (OIDC trusted publishing)
-        # No registry-url / NODE_AUTH_TOKEN: setup-node would otherwise write an
-        # empty _authToken into .npmrc, which makes npm skip OIDC. Default
-        # registry is npmjs.org; OIDC engages via the configured Trusted Publisher.
+        # OIDC trusted publishing: id-token:write + npm>=11.5.1 + no NODE_AUTH_TOKEN.
+        # Requires a matching npm Trusted Publisher (org, repo, workflow file, env).
         run: npm publish --access public
 
   crates:

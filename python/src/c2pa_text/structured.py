@@ -248,6 +248,35 @@ def recommended_method(mime: str) -> Method | None:
     return None
 
 
+_COMMENT_SYNTAX = {
+    "text/css": ("/*", "*/"),
+    "application/javascript": ("//", ""),
+    "text/javascript": ("//", ""),
+    "text/markdown": ("<!--", "-->"),
+    "text/xml": ("<!--", "-->"),
+    "application/xml": ("<!--", "-->"),
+    "application/xhtml+xml": ("<!--", "-->"),
+    "application/yaml": ("#", ""),
+    "text/yaml": ("#", ""),
+    "application/x-yaml": ("#", ""),
+    "application/toml": ("#", ""),
+}
+
+
+def comment_syntax(mime: str) -> tuple[str, str] | None:
+    """Host comment delimiters ``(prefix, suffix)`` used by the structured (A.9)
+    method for a media type, so the embedded armour block stays valid host
+    syntax. Returns ``None`` for media types with no comment convention (e.g.
+    ``application/json``, ``text/plain``, ``text/csv``) -- use the unstructured
+    (A.8) method for those.
+
+    The delimiters are each language's own comment syntax (e.g. ``("/*", "*/")``
+    for CSS); pass them to :func:`embed_structured` / :func:`build_manifest_block`.
+    Distinct from :func:`recommended_method`, which advises *which* method to use.
+    """
+    return _COMMENT_SYNTAX.get(mime)
+
+
 __all__ = [
     "BEGIN_DELIMITER",
     "END_DELIMITER",
@@ -264,4 +293,5 @@ __all__ = [
     "embed_structured",
     "extract_structured",
     "recommended_method",
+    "comment_syntax",
 ]

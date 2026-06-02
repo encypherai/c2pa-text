@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-06-02
+
+### Added
+- `comment_syntax(mime)` (Rust/Python) / `commentSyntax(mime)` (TypeScript) /
+  `CommentSyntax(mime)` (Go) in the structured (A.9) pipeline: resolves the host
+  language's comment delimiters — `("/*", "*/")` for `text/css`,
+  `("<!--", "-->")` for XML/XHTML/Markdown, `("//", "")` for JavaScript,
+  `("#", "")` for YAML/TOML — so the embedded armour block stays syntactically
+  valid in the host file. Returns nothing for media types without a comment
+  convention (`application/json`, `text/plain`, `text/csv`); use the
+  unstructured (A.8) method for those. Complements `recommended_method()` (which
+  advises *which* method to use) by supplying the delimiters *when* the
+  structured method is chosen. All four SDKs return identical mappings.
+
 ## [2.0.0] - 2026-05-29
 
 ### Changed (breaking)

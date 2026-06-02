@@ -221,3 +221,24 @@ func RecommendedMethod(mime string) Method {
 	}
 	return MethodNone
 }
+
+// CommentSyntax returns the host comment delimiters (prefix, suffix) used by the
+// structured (A.9) method for a media type, so the embedded armour block stays
+// valid host syntax. ok is false for media types with no comment convention
+// (e.g. application/json, text/plain, text/csv) -- use the unstructured (A.8)
+// method for those. The delimiters are each language's own comment syntax; pass
+// them to EmbedStructured / BuildManifestBlock. Distinct from RecommendedMethod,
+// which advises which method to use.
+func CommentSyntax(mime string) (prefix, suffix string, ok bool) {
+	switch mime {
+	case "text/css":
+		return "/*", "*/", true
+	case "application/javascript", "text/javascript":
+		return "//", "", true
+	case "text/markdown", "text/xml", "application/xml", "application/xhtml+xml":
+		return "<!--", "-->", true
+	case "application/yaml", "text/yaml", "application/x-yaml", "application/toml":
+		return "#", "", true
+	}
+	return "", "", false
+}

@@ -15,6 +15,7 @@ from c2pa_text import (
     StructuredError,
     build_manifest_block,
     build_manifest_block_multiline,
+    comment_syntax,
     decode_data_uri,
     embed_structured,
     encode_data_uri,
@@ -138,3 +139,28 @@ class TestRecommendedMethod:
     )
     def test_recommendation(self, mime, expected):
         assert recommended_method(mime) == expected
+
+
+class TestCommentSyntax:
+    @pytest.mark.parametrize(
+        "mime,expected",
+        [
+            ("text/css", ("/*", "*/")),
+            ("application/javascript", ("//", "")),
+            ("application/xml", ("<!--", "-->")),
+            ("text/markdown", ("<!--", "-->")),
+            ("application/yaml", ("#", "")),
+            ("application/toml", ("#", "")),
+            ("application/json", None),
+            ("text/plain", None),
+            ("text/csv", None),
+            ("image/jpeg", None),
+        ],
+    )
+    def test_comment_syntax(self, mime, expected):
+        assert comment_syntax(mime) == expected
+
+    def test_composes_into_valid_comment(self):
+        prefix, suffix = comment_syntax("text/css")
+        block = build_manifest_block("data:application/c2pa;base64,AA==", prefix, suffix)
+        assert block == "/* -----BEGIN C2PA MANIFEST----- data:application/c2pa;base64,AA== -----END C2PA MANIFEST----- */"

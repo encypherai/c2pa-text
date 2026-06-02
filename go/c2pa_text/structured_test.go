@@ -131,6 +131,38 @@ func TestRecommendedMethod(t *testing.T) {
 	}
 }
 
+func TestCommentSyntax(t *testing.T) {
+	type cs struct {
+		prefix, suffix string
+		ok             bool
+	}
+	cases := map[string]cs{
+		"text/css":               {"/*", "*/", true},
+		"application/javascript": {"//", "", true},
+		"application/xml":        {"<!--", "-->", true},
+		"text/markdown":          {"<!--", "-->", true},
+		"application/yaml":       {"#", "", true},
+		"application/toml":       {"#", "", true},
+		"application/json":       {"", "", false},
+		"text/plain":             {"", "", false},
+		"text/csv":               {"", "", false},
+		"image/jpeg":             {"", "", false},
+	}
+	for mime, want := range cases {
+		p, s, ok := CommentSyntax(mime)
+		if p != want.prefix || s != want.suffix || ok != want.ok {
+			t.Fatalf("mime %q: want (%q,%q,%v) got (%q,%q,%v)", mime, want.prefix, want.suffix, want.ok, p, s, ok)
+		}
+	}
+	// Resolved delimiters compose into a valid host comment.
+	p, s, _ := CommentSyntax("text/css")
+	got := BuildManifestBlock("data:application/c2pa;base64,AA==", p, s)
+	want := "/* -----BEGIN C2PA MANIFEST----- data:application/c2pa;base64,AA== -----END C2PA MANIFEST----- */"
+	if got != want {
+		t.Fatalf("block: want %q got %q", want, got)
+	}
+}
+
 // --- Golden vectors (cross-language parity) ---
 
 type goldenVectors struct {

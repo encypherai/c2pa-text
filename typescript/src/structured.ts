@@ -222,3 +222,30 @@ export function recommendedMethod(mime: string): Method | null {
   if (mime.startsWith('text/')) return Method.Structured;
   return null;
 }
+
+const COMMENT_SYNTAX: Record<string, [string, string]> = {
+  'text/css': ['/*', '*/'],
+  'application/javascript': ['//', ''],
+  'text/javascript': ['//', ''],
+  'text/markdown': ['<!--', '-->'],
+  'text/xml': ['<!--', '-->'],
+  'application/xml': ['<!--', '-->'],
+  'application/xhtml+xml': ['<!--', '-->'],
+  'application/yaml': ['#', ''],
+  'text/yaml': ['#', ''],
+  'application/x-yaml': ['#', ''],
+  'application/toml': ['#', ''],
+};
+
+/**
+ * Host comment delimiters `[prefix, suffix]` used by the structured (A.9)
+ * method for a media type, so the embedded armour block stays valid host
+ * syntax. Returns null for media types with no comment convention (e.g.
+ * application/json, text/plain, text/csv) — use the unstructured (A.8) method
+ * for those. The delimiters are each language's own comment syntax; pass them
+ * to embedStructured / buildManifestBlock. Distinct from recommendedMethod,
+ * which advises *which* method to use.
+ */
+export function commentSyntax(mime: string): [string, string] | null {
+  return COMMENT_SYNTAX[mime] ?? null;
+}

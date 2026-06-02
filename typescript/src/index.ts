@@ -34,6 +34,7 @@ export {
   embedStructured,
   extractStructured,
   recommendedMethod,
+  commentSyntax,
 } from './structured';
 
 // Re-export HTML (Appendix A.7) embedding pipeline

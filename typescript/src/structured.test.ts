@@ -10,6 +10,7 @@ import {
   StructuredError,
   buildManifestBlock,
   buildManifestBlockMultiline,
+  commentSyntax,
   decodeDataUri,
   embedStructured,
   encodeDataUri,
@@ -122,6 +123,22 @@ describe('structured unit', () => {
     expect(recommendedMethod('text/html')).toBe(Method.Html);
     expect(recommendedMethod('image/svg+xml')).toBe(Method.Svg);
     expect(recommendedMethod('image/jpeg')).toBeNull();
+  });
+
+  test('comment syntax', () => {
+    expect(commentSyntax('text/css')).toEqual(['/*', '*/']);
+    expect(commentSyntax('application/javascript')).toEqual(['//', '']);
+    expect(commentSyntax('application/xml')).toEqual(['<!--', '-->']);
+    expect(commentSyntax('text/markdown')).toEqual(['<!--', '-->']);
+    expect(commentSyntax('application/yaml')).toEqual(['#', '']);
+    expect(commentSyntax('application/toml')).toEqual(['#', '']);
+    expect(commentSyntax('application/json')).toBeNull();
+    expect(commentSyntax('text/plain')).toBeNull();
+    expect(commentSyntax('image/jpeg')).toBeNull();
+    const cs = commentSyntax('text/css')!;
+    expect(buildManifestBlock('data:application/c2pa;base64,AA==', cs[0], cs[1])).toBe(
+      '/* -----BEGIN C2PA MANIFEST----- data:application/c2pa;base64,AA== -----END C2PA MANIFEST----- */',
+    );
   });
 });
 

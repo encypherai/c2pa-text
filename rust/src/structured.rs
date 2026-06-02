@@ -257,6 +257,29 @@ pub fn recommended_method(mime: &str) -> Option<Method> {
     }
 }
 
+/// The host comment delimiters `(prefix, suffix)` used by the structured (A.9)
+/// method for a media type, so the embedded armour block remains valid host
+/// syntax. Returns `None` for media types with no comment convention (e.g.
+/// `application/json`, `text/plain`, `text/csv`) — those should use the
+/// unstructured (A.8) method instead.
+///
+/// The delimiters are each language's own comment syntax (a factual property of
+/// the format), e.g. `("/*", "*/")` for CSS or `("<!--", "-->")` for XML. Pass
+/// them straight to [`embed_structured`] / [`build_manifest_block`]. This is
+/// distinct from [`recommended_method`]: that advises *which* method to use,
+/// this supplies the comment delimiters *if* the structured method is chosen.
+pub fn comment_syntax(mime: &str) -> Option<(&'static str, &'static str)> {
+    Some(match mime {
+        "text/css" => ("/*", "*/"),
+        "application/javascript" | "text/javascript" => ("//", ""),
+        "text/markdown" | "text/xml" | "application/xml" | "application/xhtml+xml" => {
+            ("<!--", "-->")
+        }
+        "application/yaml" | "text/yaml" | "application/x-yaml" | "application/toml" => ("#", ""),
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,5 +414,26 @@ mod tests {
         assert_eq!(recommended_method("text/html"), Some(Method::Html));
         assert_eq!(recommended_method("image/svg+xml"), Some(Method::Svg));
         assert_eq!(recommended_method("image/jpeg"), None);
+    }
+
+    #[test]
+    fn comment_syntax_maps_known_formats() {
+        assert_eq!(comment_syntax("text/css"), Some(("/*", "*/")));
+        assert_eq!(comment_syntax("application/javascript"), Some(("//", "")));
+        assert_eq!(comment_syntax("application/xml"), Some(("<!--", "-->")));
+        assert_eq!(comment_syntax("text/markdown"), Some(("<!--", "-->")));
+        assert_eq!(comment_syntax("application/yaml"), Some(("#", "")));
+        assert_eq!(comment_syntax("application/toml"), Some(("#", "")));
+        // No comment convention -> None (caller should use the A.8 method).
+        assert_eq!(comment_syntax("application/json"), None);
+        assert_eq!(comment_syntax("text/plain"), None);
+        assert_eq!(comment_syntax("text/csv"), None);
+        assert_eq!(comment_syntax("image/jpeg"), None);
+        // Resolved delimiters compose into a valid host comment.
+        let (p, s) = comment_syntax("text/css").unwrap();
+        assert_eq!(
+            build_manifest_block("data:application/c2pa;base64,AA==", p, s),
+            "/* -----BEGIN C2PA MANIFEST----- data:application/c2pa;base64,AA== -----END C2PA MANIFEST----- */"
+        );
     }
 }

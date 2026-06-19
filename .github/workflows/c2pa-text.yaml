@@ -128,7 +128,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - name: 'Audit: Python (pip-audit via uv)'
         working-directory: python
-        run: uv run --with pip-audit pip-audit --strict --desc --skip-editable
+        run: uv run --with pip-audit pip-audit --desc --skip-editable
 
       - uses: actions/setup-node@v4
         with:

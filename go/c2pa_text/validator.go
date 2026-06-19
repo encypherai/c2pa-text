@@ -17,29 +17,26 @@ var (
 	}
 )
 
-// ValidationCode represents C2PA-compliant validation status codes.
+// ValidationCode is a registered C2PA validation status code emitted for text
+// manifests. Only members of the C2PA registered validation-status enumeration
+// are produced, so verifiers and integration partners get machine-readable
+// interop. The specific structural reason for a failure is carried in
+// ValidationIssue.Message (the C2PA model of a coarse status code plus a
+// human-readable explanation).
 type ValidationCode string
 
 const (
-	// Success
+	// ValidationCodeValid indicates no structural issues were found.
 	ValidationCodeValid ValidationCode = "valid"
 
-	// Wrapper-level failures (from C2PA Text spec)
+	// ValidationCodeCorruptedWrapper indicates a C2PATextManifestWrapper was
+	// located but is malformed or incomplete: bad magic, unsupported version,
+	// truncated/length mismatch, or an invalid embedded JUMBF manifest store.
 	ValidationCodeCorruptedWrapper ValidationCode = "manifest.text.corruptedWrapper"
+
+	// ValidationCodeMultipleWrappers indicates more than one valid
+	// C2PATextManifestWrapper was found in the text.
 	ValidationCodeMultipleWrappers ValidationCode = "manifest.text.multipleWrappers"
-
-	// Extended validation codes
-	ValidationCodeInvalidMagic       ValidationCode = "manifest.text.invalidMagic"
-	ValidationCodeUnsupportedVersion ValidationCode = "manifest.text.unsupportedVersion"
-	ValidationCodeLengthMismatch     ValidationCode = "manifest.text.lengthMismatch"
-	ValidationCodeEmptyManifest      ValidationCode = "manifest.text.emptyManifest"
-
-	// JUMBF-level failures
-	ValidationCodeInvalidJumbfHeader    ValidationCode = "manifest.jumbf.invalidHeader"
-	ValidationCodeInvalidJumbfBoxSize   ValidationCode = "manifest.jumbf.invalidBoxSize"
-	ValidationCodeMissingDescriptionBox ValidationCode = "manifest.jumbf.missingDescriptionBox"
-	ValidationCodeInvalidC2paUuid       ValidationCode = "manifest.jumbf.invalidC2paUuid"
-	ValidationCodeTruncatedJumbf        ValidationCode = "manifest.jumbf.truncated"
 )
 
 // ValidationIssue represents a single validation issue.
@@ -121,14 +118,14 @@ func ValidateJumbfStructure(jumbfBytes []byte, strict bool) *ValidationResult {
 	result.JumbfBytes = jumbfBytes
 
 	if len(jumbfBytes) == 0 {
-		result.AddIssue(ValidationCodeEmptyManifest, "JUMBF content is empty", 0, "")
+		result.AddIssue(ValidationCodeCorruptedWrapper, "JUMBF content is empty", 0, "")
 		return result
 	}
 
 	// Minimum JUMBF box: 8 bytes header (size + type)
 	if len(jumbfBytes) < 8 {
 		result.AddIssue(
-			ValidationCodeInvalidJumbfHeader,
+			ValidationCodeCorruptedWrapper,
 			fmt.Sprintf("JUMBF too short for box header: %d bytes, minimum 8", len(jumbfBytes)),
 			0, "",
 		)
@@ -150,7 +147,7 @@ func ValidateJumbfStructure(jumbfBytes []byte, strict bool) *ValidationResult {
 		// Extended size (64-bit)
 		if len(jumbfBytes) < 16 {
 			result.AddIssue(
-				ValidationCodeTruncatedJumbf,
+				ValidationCodeCorruptedWrapper,
 				"Extended box size declared but not enough bytes for 64-bit size field",
 				0, "",
 			)
@@ -160,7 +157,7 @@ func ValidateJumbfStructure(jumbfBytes []byte, strict bool) *ValidationResult {
 		headerSize = 16
 	} else if boxSize < 8 {
 		result.AddIssue(
-			ValidationCodeInvalidJumbfBoxSize,
+			ValidationCodeCorruptedWrapper,
 			fmt.Sprintf("Invalid box size: %d (minimum is 8)", boxSize),
 			0, "",
 		)
@@ -173,7 +170,7 @@ func ValidateJumbfStructure(jumbfBytes []byte, strict bool) *ValidationResult {
 	// Check if we have enough bytes
 	if len(jumbfBytes) < effectiveSize {
 		result.AddIssue(
-			ValidationCodeTruncatedJumbf,
+			ValidationCodeCorruptedWrapper,
 			fmt.Sprintf("JUMBF truncated: declared size %d, actual %d", effectiveSize, len(jumbfBytes)),
 			0, "",
 		)
@@ -183,7 +180,7 @@ func ValidateJumbfStructure(jumbfBytes []byte, strict bool) *ValidationResult {
 	// Check for JUMBF superbox type
 	if !bytesEqual(boxType, JumbfSuperboxType) {
 		result.AddIssue(
-			ValidationCodeInvalidJumbfHeader,
+			ValidationCodeCorruptedWrapper,
 			fmt.Sprintf("Expected JUMBF superbox type 'jumb', got '%s'", string(boxType)),
 			4,
 			fmt.Sprintf("box_type=%x", boxType),
@@ -195,7 +192,7 @@ func ValidateJumbfStructure(jumbfBytes []byte, strict bool) *ValidationResult {
 		// Check for description box (jumd)
 		if len(jumbfBytes) < headerSize+8 {
 			result.AddIssue(
-				ValidationCodeMissingDescriptionBox,
+				ValidationCodeCorruptedWrapper,
 				"JUMBF superbox too short to contain description box",
 				headerSize, "",
 			)
@@ -205,7 +202,7 @@ func ValidateJumbfStructure(jumbfBytes []byte, strict bool) *ValidationResult {
 		descType := jumbfBytes[headerSize+4 : headerSize+8]
 		if !bytesEqual(descType, JumbfDescType) {
 			result.AddIssue(
-				ValidationCodeMissingDescriptionBox,
+				ValidationCodeCorruptedWrapper,
 				fmt.Sprintf("Expected description box 'jumd', got '%s'", string(descType)),
 				headerSize+4, "",
 			)
@@ -218,7 +215,7 @@ func ValidateJumbfStructure(jumbfBytes []byte, strict bool) *ValidationResult {
 			foundUuid := jumbfBytes[uuidOffset : uuidOffset+16]
 			if !bytesEqual(foundUuid, C2PAManifestStoreUUID) {
 				result.AddIssue(
-					ValidationCodeInvalidC2paUuid,
+					ValidationCodeCorruptedWrapper,
 					"Invalid C2PA manifest store UUID",
 					uuidOffset,
 					fmt.Sprintf("expected=%x, found=%x", C2PAManifestStoreUUID, foundUuid),
@@ -236,7 +233,7 @@ func ValidateManifest(manifestBytes []byte, validateJumbf bool, strict bool) *Va
 	result.ManifestBytes = manifestBytes
 
 	if len(manifestBytes) == 0 {
-		result.AddIssue(ValidationCodeEmptyManifest, "Manifest bytes are empty", -1, "")
+		result.AddIssue(ValidationCodeCorruptedWrapper, "Manifest bytes are empty", -1, "")
 		return result
 	}
 
@@ -270,7 +267,7 @@ func ValidateWrapperBytes(wrapperBytes []byte) *ValidationResult {
 	magic := wrapperBytes[0:8]
 	if !bytesEqual(magic, Magic) {
 		result.AddIssue(
-			ValidationCodeInvalidMagic,
+			ValidationCodeCorruptedWrapper,
 			fmt.Sprintf("Invalid magic: expected 'C2PATXT\\0', got '%s'", string(magic)),
 			0, "",
 		)
@@ -282,7 +279,7 @@ func ValidateWrapperBytes(wrapperBytes []byte) *ValidationResult {
 	result.Version = version
 	if version != Version {
 		result.AddIssue(
-			ValidationCodeUnsupportedVersion,
+			ValidationCodeCorruptedWrapper,
 			fmt.Sprintf("Unsupported version: %d, expected %d", version, Version),
 			8, "",
 		)
@@ -301,7 +298,7 @@ func ValidateWrapperBytes(wrapperBytes []byte) *ValidationResult {
 	// extract the manifest and ignore trailing padding).
 	if int(declaredLength) > actualJumbfLength {
 		result.AddIssue(
-			ValidationCodeLengthMismatch,
+			ValidationCodeCorruptedWrapper,
 			fmt.Sprintf("Length mismatch: declares %d bytes, only %d available (truncated)", declaredLength, actualJumbfLength),
 			9, "",
 		)

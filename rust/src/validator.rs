@@ -12,43 +12,32 @@ const C2PA_MANIFEST_STORE_UUID: [u8; 16] = [
     0x63, 0x32, 0x70, 0x61, 0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
 ];
 
-/// C2PA-compliant validation status codes for text manifests.
+/// Registered C2PA validation status codes emitted for text manifests.
+///
+/// Only members of the C2PA registered validation-status enumeration are
+/// produced, so verifiers and integration partners get machine-readable
+/// interop. The specific structural reason for a failure is carried in
+/// [`ValidationIssue::message`], mirroring the C2PA model of a coarse status
+/// code plus a human-readable explanation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationCode {
-    /// Manifest is valid
+    /// No structural issues were found.
     Valid,
-    /// Wrapper-level failures (from C2PA Text spec)
+    /// A `C2PATextManifestWrapper` was located but is malformed or incomplete:
+    /// bad magic, unsupported version, truncated/length mismatch, or an
+    /// invalid embedded JUMBF manifest store.
     CorruptedWrapper,
+    /// More than one valid `C2PATextManifestWrapper` was found in the text.
     MultipleWrappers,
-    /// Extended validation codes
-    InvalidMagic,
-    UnsupportedVersion,
-    LengthMismatch,
-    EmptyManifest,
-    /// JUMBF-level failures
-    InvalidJumbfHeader,
-    InvalidJumbfBoxSize,
-    MissingDescriptionBox,
-    InvalidC2paUuid,
-    TruncatedJumbf,
 }
 
 impl ValidationCode {
-    /// Returns the C2PA-compliant status code string.
+    /// Returns the registered C2PA status code string.
     pub fn as_str(&self) -> &'static str {
         match self {
             ValidationCode::Valid => "valid",
             ValidationCode::CorruptedWrapper => "manifest.text.corruptedWrapper",
             ValidationCode::MultipleWrappers => "manifest.text.multipleWrappers",
-            ValidationCode::InvalidMagic => "manifest.text.invalidMagic",
-            ValidationCode::UnsupportedVersion => "manifest.text.unsupportedVersion",
-            ValidationCode::LengthMismatch => "manifest.text.lengthMismatch",
-            ValidationCode::EmptyManifest => "manifest.text.emptyManifest",
-            ValidationCode::InvalidJumbfHeader => "manifest.jumbf.invalidHeader",
-            ValidationCode::InvalidJumbfBoxSize => "manifest.jumbf.invalidBoxSize",
-            ValidationCode::MissingDescriptionBox => "manifest.jumbf.missingDescriptionBox",
-            ValidationCode::InvalidC2paUuid => "manifest.jumbf.invalidC2paUuid",
-            ValidationCode::TruncatedJumbf => "manifest.jumbf.truncated",
         }
     }
 }
@@ -153,7 +142,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
 
     if jumbf_bytes.is_empty() {
         result.add_issue(
-            ValidationCode::EmptyManifest,
+            ValidationCode::CorruptedWrapper,
             "JUMBF content is empty",
             Some(0),
             None,
@@ -164,7 +153,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
     // Minimum JUMBF box: 8 bytes header (size + type)
     if jumbf_bytes.len() < 8 {
         result.add_issue(
-            ValidationCode::InvalidJumbfHeader,
+            ValidationCode::CorruptedWrapper,
             format!(
                 "JUMBF too short for box header: {} bytes, minimum 8",
                 jumbf_bytes.len()
@@ -192,7 +181,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
         // Extended size (64-bit)
         if jumbf_bytes.len() < 16 {
             result.add_issue(
-                ValidationCode::TruncatedJumbf,
+                ValidationCode::CorruptedWrapper,
                 "Extended box size declared but not enough bytes for 64-bit size field",
                 Some(0),
                 None,
@@ -212,7 +201,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
         (extended_size, 16)
     } else if box_size < 8 {
         result.add_issue(
-            ValidationCode::InvalidJumbfBoxSize,
+            ValidationCode::CorruptedWrapper,
             format!("Invalid box size: {} (minimum is 8)", box_size),
             Some(0),
             None,
@@ -225,7 +214,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
     // Check if we have enough bytes
     if jumbf_bytes.len() < effective_size {
         result.add_issue(
-            ValidationCode::TruncatedJumbf,
+            ValidationCode::CorruptedWrapper,
             format!(
                 "JUMBF truncated: declared size {}, actual {}",
                 effective_size,
@@ -240,7 +229,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
     // Check for JUMBF superbox type
     if box_type != JUMBF_SUPERBOX_TYPE {
         result.add_issue(
-            ValidationCode::InvalidJumbfHeader,
+            ValidationCode::CorruptedWrapper,
             format!(
                 "Expected JUMBF superbox type 'jumb', got '{}'",
                 String::from_utf8_lossy(box_type)
@@ -255,7 +244,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
         // Check for description box (jumd)
         if jumbf_bytes.len() < header_size + 8 {
             result.add_issue(
-                ValidationCode::MissingDescriptionBox,
+                ValidationCode::CorruptedWrapper,
                 "JUMBF superbox too short to contain description box",
                 Some(header_size),
                 None,
@@ -266,7 +255,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
         let desc_type = &jumbf_bytes[header_size + 4..header_size + 8];
         if desc_type != JUMBF_DESC_TYPE {
             result.add_issue(
-                ValidationCode::MissingDescriptionBox,
+                ValidationCode::CorruptedWrapper,
                 format!(
                     "Expected description box 'jumd', got '{}'",
                     String::from_utf8_lossy(desc_type)
@@ -283,7 +272,7 @@ pub fn validate_jumbf_structure(jumbf_bytes: &[u8], strict: bool) -> ValidationR
             let found_uuid = &jumbf_bytes[uuid_offset..uuid_offset + 16];
             if found_uuid != C2PA_MANIFEST_STORE_UUID {
                 result.add_issue(
-                    ValidationCode::InvalidC2paUuid,
+                    ValidationCode::CorruptedWrapper,
                     "Invalid C2PA manifest store UUID",
                     Some(uuid_offset),
                     Some(format!(
@@ -311,7 +300,7 @@ pub fn validate_manifest(
 
     if manifest_bytes.is_empty() {
         result.add_issue(
-            ValidationCode::EmptyManifest,
+            ValidationCode::CorruptedWrapper,
             "Manifest bytes are empty",
             None,
             None,
@@ -355,7 +344,7 @@ pub fn validate_wrapper_bytes(wrapper_bytes: &[u8]) -> ValidationResult {
     // Check magic
     if &wrapper_bytes[0..8] != MAGIC {
         result.add_issue(
-            ValidationCode::InvalidMagic,
+            ValidationCode::CorruptedWrapper,
             format!(
                 "Invalid magic: expected 'C2PATXT\\0', got {:?}",
                 &wrapper_bytes[0..8]
@@ -371,7 +360,7 @@ pub fn validate_wrapper_bytes(wrapper_bytes: &[u8]) -> ValidationResult {
     result.version = Some(version);
     if version != VERSION {
         result.add_issue(
-            ValidationCode::UnsupportedVersion,
+            ValidationCode::CorruptedWrapper,
             format!("Unsupported version: {}, expected {}", version, VERSION),
             Some(8),
             None,
@@ -396,7 +385,7 @@ pub fn validate_wrapper_bytes(wrapper_bytes: &[u8]) -> ValidationResult {
     // extract the manifest and ignore trailing padding).
     if (declared_length as usize) > actual_jumbf_length {
         result.add_issue(
-            ValidationCode::LengthMismatch,
+            ValidationCode::CorruptedWrapper,
             format!(
                 "Length mismatch: declares {} bytes, only {} available (truncated)",
                 declared_length, actual_jumbf_length
@@ -510,7 +499,8 @@ mod tests {
     fn test_empty_manifest_fails() {
         let result = validate_manifest(&[], true, false);
         assert!(!result.valid);
-        assert_eq!(result.primary_code(), ValidationCode::EmptyManifest);
+        assert_eq!(result.primary_code(), ValidationCode::CorruptedWrapper);
+        assert!(result.issues[0].message.to_lowercase().contains("empty"));
     }
 
     #[test]
@@ -528,7 +518,8 @@ mod tests {
         invalid.extend_from_slice(b"xxxx");
         let result = validate_manifest(&invalid, true, false);
         assert!(!result.valid);
-        assert_eq!(result.primary_code(), ValidationCode::InvalidJumbfHeader);
+        assert_eq!(result.primary_code(), ValidationCode::CorruptedWrapper);
+        assert!(result.issues[0].message.contains("superbox type"));
     }
 
     #[test]
@@ -537,7 +528,8 @@ mod tests {
         truncated.extend_from_slice(b"jumb");
         let result = validate_manifest(&truncated, true, false);
         assert!(!result.valid);
-        assert_eq!(result.primary_code(), ValidationCode::TruncatedJumbf);
+        assert_eq!(result.primary_code(), ValidationCode::CorruptedWrapper);
+        assert!(result.issues[0].message.to_lowercase().contains("truncated"));
     }
 
     // ---------- validate_text tests ----------
@@ -596,7 +588,8 @@ mod tests {
         let result = validate_text(&text);
         assert!(!result.valid);
         let codes: Vec<_> = result.issues.iter().map(|i| &i.code).collect();
-        assert!(codes.contains(&&ValidationCode::UnsupportedVersion));
+        assert!(codes.contains(&&ValidationCode::CorruptedWrapper));
+        assert!(result.issues.iter().any(|i| i.message.contains("Unsupported version")));
     }
 
     #[test]
@@ -619,7 +612,8 @@ mod tests {
         let result = validate_text(&text);
         assert!(!result.valid);
         let codes: Vec<_> = result.issues.iter().map(|i| &i.code).collect();
-        assert!(codes.contains(&&ValidationCode::LengthMismatch));
+        assert!(codes.contains(&&ValidationCode::CorruptedWrapper));
+        assert!(result.issues.iter().any(|i| i.message.contains("Length mismatch")));
     }
 
     #[test]
@@ -651,5 +645,81 @@ mod tests {
         let result = validate_text(&text);
         // Wrong magic means not recognized as a C2PA wrapper at all.
         assert!(result.valid);
+    }
+
+    #[test]
+    fn test_only_registered_codes_emitted() {
+        use crate::{byte_to_vs, MAGIC, VERSION, ZWNBSP};
+        // The only registered C2PA validation-status codes this library emits.
+        const REGISTERED: [&str; 2] = [
+            "manifest.text.corruptedWrapper",
+            "manifest.text.multipleWrappers",
+        ];
+        let make_text = |raw: &[u8]| {
+            let mut wrapper = String::new();
+            wrapper.push(ZWNBSP);
+            for &b in raw {
+                wrapper.push(byte_to_vs(b));
+            }
+            format!("text{}", wrapper)
+        };
+        let header = |ver: u8, len: u32| {
+            let mut h = Vec::new();
+            h.extend_from_slice(MAGIC);
+            h.push(ver);
+            h.extend_from_slice(&len.to_be_bytes());
+            h
+        };
+        let good = vec![0u8, 0, 0, 8, b'j', b'u', b'm', b'b'];
+        let bad_jumbf = vec![0u8, 0, 0, 100, b'j', b'u', b'm', b'b'];
+
+        // A battery of malformed text assets exercising every failure path.
+        let mut texts: Vec<String> = Vec::new();
+        // Unsupported version.
+        let mut r = header(99, good.len() as u32);
+        r.extend_from_slice(&good);
+        texts.push(make_text(&r));
+        // Declared length exceeds available bytes (truncated wrapper).
+        let mut r = header(VERSION, 50);
+        r.extend_from_slice(&good);
+        texts.push(make_text(&r));
+        // Structurally invalid embedded JUMBF manifest store.
+        let mut r = header(VERSION, bad_jumbf.len() as u32);
+        r.extend_from_slice(&bad_jumbf);
+        texts.push(make_text(&r));
+        // Multiple wrappers.
+        let signed = crate::embed_manifest("hi", &good);
+        texts.push(format!("{}{}", signed, crate::encode_wrapper(&good)));
+
+        let mut saw_failure = false;
+        for t in &texts {
+            let result = validate_text(t);
+            for issue in &result.issues {
+                saw_failure = true;
+                assert!(
+                    REGISTERED.contains(&issue.code.as_str()),
+                    "validate_text emitted unregistered code {:?}",
+                    issue.code.as_str()
+                );
+            }
+        }
+        assert!(saw_failure, "battery should have produced failures");
+
+        // Direct manifest/JUMBF validation must also stay within the registered set.
+        let direct: [Vec<u8>; 3] = [
+            vec![],
+            vec![0u8, 0, 0, 5, b'j'],
+            vec![0u8, 0, 0, 8, b'x', b'x', b'x', b'x'],
+        ];
+        for case in &direct {
+            let result = validate_manifest(case, true, false);
+            for issue in &result.issues {
+                assert!(
+                    REGISTERED.contains(&issue.code.as_str()),
+                    "validate_manifest emitted unregistered code {:?}",
+                    issue.code.as_str()
+                );
+            }
+        }
     }
 }

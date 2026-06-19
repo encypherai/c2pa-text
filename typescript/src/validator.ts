@@ -19,28 +19,27 @@ const VERSION = 1;
 const HEADER_SIZE = 13;
 
 /**
- * C2PA-compliant validation status codes for text manifests.
+ * Registered C2PA validation status codes emitted for text manifests.
+ *
+ * Only members of the C2PA registered validation-status enumeration are
+ * produced, so verifiers and integration partners get machine-readable interop.
+ * The specific structural reason for a failure is carried in
+ * `ValidationIssue.message` (the C2PA model of a coarse status code plus a
+ * human-readable explanation).
  */
 export enum ValidationCode {
-  // Success
+  /** No structural issues were found. */
   Valid = "valid",
 
-  // Wrapper-level failures (from C2PA Text spec)
+  /**
+   * A `C2PATextManifestWrapper` was located but is malformed or incomplete:
+   * bad magic, unsupported version, truncated/length mismatch, or an invalid
+   * embedded JUMBF manifest store.
+   */
   CorruptedWrapper = "manifest.text.corruptedWrapper",
+
+  /** More than one valid `C2PATextManifestWrapper` was found in the text. */
   MultipleWrappers = "manifest.text.multipleWrappers",
-
-  // Extended validation codes
-  InvalidMagic = "manifest.text.invalidMagic",
-  UnsupportedVersion = "manifest.text.unsupportedVersion",
-  LengthMismatch = "manifest.text.lengthMismatch",
-  EmptyManifest = "manifest.text.emptyManifest",
-
-  // JUMBF-level failures
-  InvalidJumbfHeader = "manifest.jumbf.invalidHeader",
-  InvalidJumbfBoxSize = "manifest.jumbf.invalidBoxSize",
-  MissingDescriptionBox = "manifest.jumbf.missingDescriptionBox",
-  InvalidC2paUuid = "manifest.jumbf.invalidC2paUuid",
-  TruncatedJumbf = "manifest.jumbf.truncated",
 }
 
 /**
@@ -104,14 +103,14 @@ export function validateJumbfStructure(
   };
 
   if (jumbfBytes.length === 0) {
-    addIssue(ValidationCode.EmptyManifest, "JUMBF content is empty", 0);
+    addIssue(ValidationCode.CorruptedWrapper, "JUMBF content is empty", 0);
     return result;
   }
 
   // Minimum JUMBF box: 8 bytes header (size + type)
   if (jumbfBytes.length < 8) {
     addIssue(
-      ValidationCode.InvalidJumbfHeader,
+      ValidationCode.CorruptedWrapper,
       `JUMBF too short for box header: ${jumbfBytes.length} bytes, minimum 8`,
       0
     );
@@ -137,7 +136,7 @@ export function validateJumbfStructure(
     // Extended size (64-bit)
     if (jumbfBytes.length < 16) {
       addIssue(
-        ValidationCode.TruncatedJumbf,
+        ValidationCode.CorruptedWrapper,
         "Extended box size declared but not enough bytes for 64-bit size field",
         0
       );
@@ -159,7 +158,7 @@ export function validateJumbfStructure(
     headerSize = 16;
   } else if (boxSize < 8) {
     addIssue(
-      ValidationCode.InvalidJumbfBoxSize,
+      ValidationCode.CorruptedWrapper,
       `Invalid box size: ${boxSize} (minimum is 8)`,
       0
     );
@@ -172,7 +171,7 @@ export function validateJumbfStructure(
   // Check if we have enough bytes
   if (jumbfBytes.length < effectiveSize) {
     addIssue(
-      ValidationCode.TruncatedJumbf,
+      ValidationCode.CorruptedWrapper,
       `JUMBF truncated: declared size ${effectiveSize}, actual ${jumbfBytes.length}`,
       0
     );
@@ -182,7 +181,7 @@ export function validateJumbfStructure(
   // Check for JUMBF superbox type
   if (!arraysEqual(boxType, JUMBF_SUPERBOX_TYPE)) {
     addIssue(
-      ValidationCode.InvalidJumbfHeader,
+      ValidationCode.CorruptedWrapper,
       `Expected JUMBF superbox type 'jumb', got '${bytesToString(boxType)}'`,
       4,
       `box_type=${Array.from(boxType).map((b) => b.toString(16).padStart(2, "0")).join("")}`
@@ -194,7 +193,7 @@ export function validateJumbfStructure(
     // Check for description box (jumd)
     if (jumbfBytes.length < headerSize + 8) {
       addIssue(
-        ValidationCode.MissingDescriptionBox,
+        ValidationCode.CorruptedWrapper,
         "JUMBF superbox too short to contain description box",
         headerSize
       );
@@ -204,7 +203,7 @@ export function validateJumbfStructure(
     const descType = jumbfBytes.slice(headerSize + 4, headerSize + 8);
     if (!arraysEqual(descType, JUMBF_DESC_TYPE)) {
       addIssue(
-        ValidationCode.MissingDescriptionBox,
+        ValidationCode.CorruptedWrapper,
         `Expected description box 'jumd', got '${bytesToString(descType)}'`,
         headerSize + 4
       );
@@ -217,7 +216,7 @@ export function validateJumbfStructure(
       const foundUuid = jumbfBytes.slice(uuidOffset, uuidOffset + 16);
       if (!arraysEqual(foundUuid, C2PA_MANIFEST_STORE_UUID)) {
         addIssue(
-          ValidationCode.InvalidC2paUuid,
+          ValidationCode.CorruptedWrapper,
           "Invalid C2PA manifest store UUID",
           uuidOffset,
           `expected=${Array.from(C2PA_MANIFEST_STORE_UUID).map((b) => b.toString(16).padStart(2, "0")).join("")}, found=${Array.from(foundUuid).map((b) => b.toString(16).padStart(2, "0")).join("")}`
@@ -256,7 +255,7 @@ export function validateManifest(
   };
 
   if (manifestBytes.length === 0) {
-    addIssue(ValidationCode.EmptyManifest, "Manifest bytes are empty");
+    addIssue(ValidationCode.CorruptedWrapper, "Manifest bytes are empty");
     return result;
   }
 
@@ -305,7 +304,7 @@ export function validateWrapperBytes(wrapperBytes: Uint8Array): ValidationResult
   const magic = wrapperBytes.slice(0, 8);
   if (!arraysEqual(magic, MAGIC)) {
     addIssue(
-      ValidationCode.InvalidMagic,
+      ValidationCode.CorruptedWrapper,
       `Invalid magic: expected 'C2PATXT\\0', got '${bytesToString(magic)}'`,
       0
     );
@@ -317,7 +316,7 @@ export function validateWrapperBytes(wrapperBytes: Uint8Array): ValidationResult
   result.version = version;
   if (version !== VERSION) {
     addIssue(
-      ValidationCode.UnsupportedVersion,
+      ValidationCode.CorruptedWrapper,
       `Unsupported version: ${version}, expected ${VERSION}`,
       8
     );
@@ -340,7 +339,7 @@ export function validateWrapperBytes(wrapperBytes: Uint8Array): ValidationResult
   // extract the manifest and ignore trailing padding).
   if (declaredLength > actualJumbfLength) {
     addIssue(
-      ValidationCode.LengthMismatch,
+      ValidationCode.CorruptedWrapper,
       `Length mismatch: declares ${declaredLength} bytes, only ${actualJumbfLength} available (truncated)`,
       9
     );

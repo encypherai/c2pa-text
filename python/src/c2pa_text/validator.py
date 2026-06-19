@@ -24,27 +24,25 @@ C2PA_MANIFEST_STORE_UUID = bytes.fromhex("6332706100110010800000AA00389B71")  # 
 
 
 class ValidationCode(Enum):
-    """C2PA-compliant validation status codes for text manifests."""
+    """Registered C2PA validation status codes emitted for text manifests.
 
-    # Success
+    Only members of the C2PA registered validation-status enumeration are
+    produced, so verifiers and integration partners get machine-readable
+    interop. The specific structural reason for a failure is carried in
+    ``ValidationIssue.message`` (the C2PA model of a coarse status code plus a
+    human-readable explanation).
+    """
+
+    # No structural issues were found.
     VALID = "valid"
 
-    # Wrapper-level failures (from C2PA Text spec)
+    # A C2PATextManifestWrapper was located but is malformed or incomplete:
+    # bad magic, unsupported version, truncated/length mismatch, or an invalid
+    # embedded JUMBF manifest store.
     CORRUPTED_WRAPPER = "manifest.text.corruptedWrapper"
+
+    # More than one valid C2PATextManifestWrapper was found in the text.
     MULTIPLE_WRAPPERS = "manifest.text.multipleWrappers"
-
-    # Extended validation codes for developer guidance
-    INVALID_MAGIC = "manifest.text.invalidMagic"
-    UNSUPPORTED_VERSION = "manifest.text.unsupportedVersion"
-    LENGTH_MISMATCH = "manifest.text.lengthMismatch"
-    EMPTY_MANIFEST = "manifest.text.emptyManifest"
-
-    # JUMBF-level failures
-    INVALID_JUMBF_HEADER = "manifest.jumbf.invalidHeader"
-    INVALID_JUMBF_BOX_SIZE = "manifest.jumbf.invalidBoxSize"
-    MISSING_DESCRIPTION_BOX = "manifest.jumbf.missingDescriptionBox"
-    INVALID_C2PA_UUID = "manifest.jumbf.invalidC2paUuid"
-    TRUNCATED_JUMBF = "manifest.jumbf.truncated"
 
 
 @dataclass
@@ -113,13 +111,13 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
     result = ValidationResult(valid=True, jumbf_bytes=jumbf_bytes)
 
     if not jumbf_bytes:
-        result.add_issue(ValidationCode.EMPTY_MANIFEST, "JUMBF content is empty")
+        result.add_issue(ValidationCode.CORRUPTED_WRAPPER, "JUMBF content is empty")
         return result
 
     # Minimum JUMBF box: 8 bytes header (size + type)
     if len(jumbf_bytes) < 8:
         result.add_issue(
-            ValidationCode.INVALID_JUMBF_HEADER,
+            ValidationCode.CORRUPTED_WRAPPER,
             f"JUMBF too short for box header: {len(jumbf_bytes)} bytes, minimum 8",
             offset=0,
         )
@@ -131,7 +129,7 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
         box_type = jumbf_bytes[4:8]
     except struct.error as e:
         result.add_issue(
-            ValidationCode.INVALID_JUMBF_HEADER,
+            ValidationCode.CORRUPTED_WRAPPER,
             f"Failed to parse JUMBF box header: {e}",
             offset=0,
         )
@@ -145,7 +143,7 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
         # Extended size (64-bit) - need 16 bytes minimum
         if len(jumbf_bytes) < 16:
             result.add_issue(
-                ValidationCode.TRUNCATED_JUMBF,
+                ValidationCode.CORRUPTED_WRAPPER,
                 "Extended box size declared but not enough bytes for 64-bit size field",
                 offset=0,
             )
@@ -153,7 +151,7 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
         box_size = struct.unpack(">Q", jumbf_bytes[8:16])[0]
     elif box_size < 8:
         result.add_issue(
-            ValidationCode.INVALID_JUMBF_BOX_SIZE,
+            ValidationCode.CORRUPTED_WRAPPER,
             f"Invalid box size: {box_size} (minimum is 8)",
             offset=0,
         )
@@ -162,7 +160,7 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
     # Check if we have enough bytes
     if box_size > 0 and len(jumbf_bytes) < box_size:
         result.add_issue(
-            ValidationCode.TRUNCATED_JUMBF,
+            ValidationCode.CORRUPTED_WRAPPER,
             f"JUMBF truncated: declared size {box_size}, actual {len(jumbf_bytes)}",
             offset=0,
         )
@@ -171,7 +169,7 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
     # Check for JUMBF superbox type
     if box_type != JUMBF_SUPERBOX_TYPE:
         result.add_issue(
-            ValidationCode.INVALID_JUMBF_HEADER,
+            ValidationCode.CORRUPTED_WRAPPER,
             f"Expected JUMBF superbox type 'jumb', got '{box_type!r}'",
             offset=4,
             context=f"box_type={box_type.hex()}",
@@ -184,7 +182,7 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
         header_size = 8 if box_size != 1 else 16
         if len(jumbf_bytes) < header_size + 8:
             result.add_issue(
-                ValidationCode.MISSING_DESCRIPTION_BOX,
+                ValidationCode.CORRUPTED_WRAPPER,
                 "JUMBF superbox too short to contain description box",
                 offset=header_size,
             )
@@ -195,7 +193,7 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
 
         if desc_type != JUMBF_DESC_TYPE:
             result.add_issue(
-                ValidationCode.MISSING_DESCRIPTION_BOX,
+                ValidationCode.CORRUPTED_WRAPPER,
                 f"Expected description box 'jumd', got '{desc_type!r}'",
                 offset=header_size + 4,
             )
@@ -208,7 +206,7 @@ def validate_jumbf_structure(jumbf_bytes: bytes, strict: bool = False) -> Valida
             found_uuid = jumbf_bytes[uuid_offset : uuid_offset + 16]
             if found_uuid != C2PA_MANIFEST_STORE_UUID:
                 result.add_issue(
-                    ValidationCode.INVALID_C2PA_UUID,
+                    ValidationCode.CORRUPTED_WRAPPER,
                     "Invalid C2PA manifest store UUID",
                     offset=uuid_offset,
                     context=f"expected={C2PA_MANIFEST_STORE_UUID.hex()}, found={found_uuid.hex()}",
@@ -248,7 +246,7 @@ def validate_manifest(
 
     # Check for empty input
     if not manifest_bytes:
-        result.add_issue(ValidationCode.EMPTY_MANIFEST, "Manifest bytes are empty")
+        result.add_issue(ValidationCode.CORRUPTED_WRAPPER, "Manifest bytes are empty")
         return result
 
     result.actual_length = len(manifest_bytes)
@@ -307,7 +305,7 @@ def validate_wrapper_bytes(wrapper_bytes: bytes) -> ValidationResult:
     # Validate magic
     if magic != MAGIC:
         result.add_issue(
-            ValidationCode.INVALID_MAGIC,
+            ValidationCode.CORRUPTED_WRAPPER,
             f"Invalid magic: expected 'C2PATXT\\0', got {magic!r}",
             offset=0,
             context=f"expected={MAGIC.hex()}, found={magic.hex()}",
@@ -317,7 +315,7 @@ def validate_wrapper_bytes(wrapper_bytes: bytes) -> ValidationResult:
     # Validate version
     if version != VERSION:
         result.add_issue(
-            ValidationCode.UNSUPPORTED_VERSION,
+            ValidationCode.CORRUPTED_WRAPPER,
             f"Unsupported version: {version}, expected {VERSION}",
             offset=8,
         )
@@ -330,7 +328,7 @@ def validate_wrapper_bytes(wrapper_bytes: bytes) -> ValidationResult:
     actual_jumbf_length = len(wrapper_bytes) - _HEADER_SIZE
     if actual_jumbf_length < length:
         result.add_issue(
-            ValidationCode.LENGTH_MISMATCH,
+            ValidationCode.CORRUPTED_WRAPPER,
             f"Length mismatch: declares {length} bytes, only {actual_jumbf_length} available (truncated)",
             offset=9,
         )

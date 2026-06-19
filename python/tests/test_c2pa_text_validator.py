@@ -27,7 +27,7 @@ class TestValidateManifest:
         """Empty bytes should fail validation."""
         result = validate_manifest(b"")
         assert not result.valid
-        assert result.primary_code == ValidationCode.EMPTY_MANIFEST
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_minimal_valid_jumbf(self):
         """A minimal valid JUMBF box should pass basic validation."""
@@ -44,7 +44,7 @@ class TestValidateManifest:
         invalid = struct.pack(">I", 8) + b"xxxx"
         result = validate_manifest(invalid)
         assert not result.valid
-        assert result.primary_code == ValidationCode.INVALID_JUMBF_HEADER
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_truncated_jumbf_fails(self):
         """JUMBF with declared size larger than actual should fail."""
@@ -52,14 +52,14 @@ class TestValidateManifest:
         truncated = struct.pack(">I", 100) + b"jumb"
         result = validate_manifest(truncated)
         assert not result.valid
-        assert result.primary_code == ValidationCode.TRUNCATED_JUMBF
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_box_size_too_small_fails(self):
         """Box size less than 8 (except 0 and 1) should fail."""
         invalid = struct.pack(">I", 5) + b"jumb"
         result = validate_manifest(invalid)
         assert not result.valid
-        assert result.primary_code == ValidationCode.INVALID_JUMBF_BOX_SIZE
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_extended_size_box(self):
         """Extended size (64-bit) boxes should be handled."""
@@ -75,7 +75,7 @@ class TestValidateManifest:
         truncated = struct.pack(">I", 1) + b"jumb" + b"xx"
         result = validate_manifest(truncated)
         assert not result.valid
-        assert result.primary_code == ValidationCode.TRUNCATED_JUMBF
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
 
 class TestValidateJumbfStructure:
@@ -87,7 +87,7 @@ class TestValidateJumbfStructure:
         jumbf = struct.pack(">I", 8) + b"jumb"
         result = validate_jumbf_structure(jumbf, strict=True)
         assert not result.valid
-        assert result.primary_code == ValidationCode.MISSING_DESCRIPTION_BOX
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_strict_validates_description_box_type(self):
         """Strict mode should validate description box type is 'jumd'."""
@@ -96,7 +96,7 @@ class TestValidateJumbfStructure:
         jumbf = struct.pack(">I", 8 + len(inner)) + b"jumb" + inner
         result = validate_jumbf_structure(jumbf, strict=True)
         assert not result.valid
-        assert result.primary_code == ValidationCode.MISSING_DESCRIPTION_BOX
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_strict_with_valid_description_box(self):
         """Strict mode should pass with valid description box."""
@@ -135,7 +135,7 @@ class TestValidateWrapperBytes:
         wrapper = header + jumbf
         result = validate_wrapper_bytes(wrapper)
         assert not result.valid
-        assert result.primary_code == ValidationCode.INVALID_MAGIC
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_unsupported_version(self):
         """Unsupported version should fail."""
@@ -144,7 +144,7 @@ class TestValidateWrapperBytes:
         wrapper = header + jumbf
         result = validate_wrapper_bytes(wrapper)
         assert not result.valid
-        assert result.primary_code == ValidationCode.UNSUPPORTED_VERSION
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_length_mismatch_truncated(self):
         """Declared length larger than actual triggers truncation error."""
@@ -154,7 +154,7 @@ class TestValidateWrapperBytes:
         wrapper = header + jumbf
         result = validate_wrapper_bytes(wrapper)
         assert not result.valid
-        assert result.primary_code == ValidationCode.LENGTH_MISMATCH
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
     def test_trailing_padding_accepted(self):
         """Extra bytes after declared manifest length are padding, not an error."""
@@ -178,16 +178,16 @@ class TestValidationResult:
     def test_str_representation_invalid(self):
         """Invalid result should list issues."""
         result = ValidationResult(valid=True)
-        result.add_issue(ValidationCode.EMPTY_MANIFEST, "Test message")
+        result.add_issue(ValidationCode.CORRUPTED_WRAPPER, "Test message")
         output = str(result)
         assert "failed" in output.lower()
-        assert "EMPTY_MANIFEST" in output or "emptyManifest" in output
+        assert "corruptedWrapper" in output
 
     def test_add_issue_sets_valid_false(self):
         """Adding an issue should set valid to False."""
         result = ValidationResult(valid=True)
         assert result.valid
-        result.add_issue(ValidationCode.EMPTY_MANIFEST, "Test")
+        result.add_issue(ValidationCode.CORRUPTED_WRAPPER, "Test")
         assert not result.valid
 
 
@@ -219,7 +219,7 @@ class TestIntegration:
 
         result = validate_manifest(invalid)
         assert not result.valid
-        assert result.primary_code == ValidationCode.TRUNCATED_JUMBF
+        assert result.primary_code == ValidationCode.CORRUPTED_WRAPPER
 
         # Developer would see this and fix before embedding
         assert "truncated" in str(result).lower()
@@ -296,7 +296,7 @@ class TestValidateText:
         result = validate_text(text_with_bad_wrapper)
         assert not result.valid
         codes = [issue.code for issue in result.issues]
-        assert ValidationCode.TRUNCATED_JUMBF in codes
+        assert ValidationCode.CORRUPTED_WRAPPER in codes
 
     def test_bad_magic_ignored(self):
         """A VS block with wrong magic is not a C2PA wrapper - no error."""
@@ -314,7 +314,7 @@ class TestValidateText:
         assert result.valid
 
     def test_bad_version_in_wrapper(self):
-        """A wrapper with unsupported version triggers unsupportedVersion."""
+        """A wrapper with unsupported version maps to corruptedWrapper."""
         from c2pa_text import ZWNBSP, _byte_to_vs
 
         jumbf = struct.pack(">I", 8) + b"jumb"
@@ -325,10 +325,10 @@ class TestValidateText:
         result = validate_text(text)
         assert not result.valid
         codes = [issue.code for issue in result.issues]
-        assert ValidationCode.UNSUPPORTED_VERSION in codes
+        assert ValidationCode.CORRUPTED_WRAPPER in codes
 
     def test_length_mismatch_in_wrapper(self):
-        """A wrapper declaring more bytes than available triggers lengthMismatch."""
+        """A wrapper declaring more bytes than available maps to corruptedWrapper."""
         from c2pa_text import ZWNBSP, _byte_to_vs
 
         jumbf = struct.pack(">I", 8) + b"jumb"
@@ -340,7 +340,7 @@ class TestValidateText:
         result = validate_text(text)
         assert not result.valid
         codes = [issue.code for issue in result.issues]
-        assert ValidationCode.LENGTH_MISMATCH in codes
+        assert ValidationCode.CORRUPTED_WRAPPER in codes
 
     def test_nfc_normalization_applied(self):
         """Validation normalizes to NFC before scanning."""
@@ -348,3 +348,63 @@ class TestValidateText:
         signed, _ = self._make_signed_text(decomposed)
         result = validate_text(signed)
         assert result.valid
+
+
+class TestRegisteredStatusCodes:
+    """Every emitted validation status code must be a registered C2PA code."""
+
+    REGISTERED = {
+        "manifest.text.corruptedWrapper",
+        "manifest.text.multipleWrappers",
+    }
+
+    def _assert_registered(self, result):
+        for issue in result.issues:
+            assert issue.code.value in self.REGISTERED, f"unregistered status code emitted: {issue.code.value}"
+
+    def test_manifest_and_jumbf_failures_are_registered(self):
+        cases = [
+            validate_manifest(b""),  # empty
+            validate_manifest(struct.pack(">I", 100) + b"jumb"),  # truncated
+            validate_manifest(struct.pack(">I", 8) + b"xxxx"),  # bad box type
+            validate_manifest(struct.pack(">I", 5) + b"jumb"),  # bad box size
+            validate_jumbf_structure(struct.pack(">I", 8) + b"jumb", strict=True),  # missing desc box
+        ]
+        saw_failure = False
+        for result in cases:
+            assert not result.valid
+            saw_failure = saw_failure or bool(result.issues)
+            self._assert_registered(result)
+        assert saw_failure
+
+    def test_wrapper_failures_are_registered(self):
+        jumbf = struct.pack(">I", 8) + b"jumb"
+        cases = [
+            validate_wrapper_bytes(b"short"),  # too short
+            validate_wrapper_bytes(struct.pack("!8sBI", b"WRONGMAG", VERSION, len(jumbf)) + jumbf),  # bad magic
+            validate_wrapper_bytes(struct.pack("!8sBI", MAGIC, 99, len(jumbf)) + jumbf),  # bad version
+            validate_wrapper_bytes(struct.pack("!8sBI", MAGIC, VERSION, 100) + jumbf),  # length mismatch
+        ]
+        for result in cases:
+            assert not result.valid
+            self._assert_registered(result)
+
+    def test_text_failures_are_registered(self):
+        from c2pa_text import ZWNBSP, _byte_to_vs, encode_wrapper
+
+        jumbf = struct.pack(">I", 8) + b"jumb"
+        # Multiple wrappers -> manifest.text.multipleWrappers
+        signed = embed_manifest("Hello", jumbf)
+        doubled = signed + encode_wrapper(jumbf)
+        multi = validate_text(doubled)
+        assert not multi.valid
+        assert ValidationCode.MULTIPLE_WRAPPERS in [i.code for i in multi.issues]
+        self._assert_registered(multi)
+
+        # Corrupted wrapper inside text (bad version) -> manifest.text.corruptedWrapper
+        header = struct.pack("!8sBI", MAGIC, 99, len(jumbf))
+        raw = header + jumbf
+        wrapper_str = ZWNBSP + "".join(_byte_to_vs(b) for b in raw)
+        bad = validate_text("Some text." + wrapper_str)
+        assert not bad.valid
+        self._assert_registered(bad)

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-06-19
+
+### Changed
+- **Validation status codes are now 100% C2PA-conformant.** Every emitted
+  `ValidationCode` value is a member of the C2PA registered validation-status
+  enumeration (spec rule `VAL-CONT-0005` / predicate `PRED-TEXT-001`). Following
+  the C2PA text-validation model, all structural failures map to the registered
+  `manifest.text.corruptedWrapper` and duplicate wrappers to
+  `manifest.text.multipleWrappers`; the specific structural reason is carried in
+  `issue.message`. Applies to all four SDKs (Python, TypeScript, Rust, Go).
+  - **BREAKING:** the unregistered codes `manifest.text.invalidMagic`,
+    `manifest.text.unsupportedVersion`, `manifest.text.lengthMismatch`,
+    `manifest.text.emptyManifest`, `manifest.jumbf.invalidHeader`,
+    `manifest.jumbf.invalidBoxSize`, `manifest.jumbf.missingDescriptionBox`,
+    `manifest.jumbf.invalidC2paUuid` and `manifest.jumbf.truncated`, along with
+    their corresponding `ValidationCode` members, have been removed. Callers that
+    matched on these members must switch to `CorruptedWrapper` and read
+    `issue.message` for the detail.
+  - **BREAKING (Go):** the module path is now
+    `github.com/encypherai/c2pa-text/go/v3` (SemVer major-version suffix);
+    update imports accordingly.
+
+### Fixed
+- Text-provenance validation no longer emits status codes outside the C2PA
+  registered enumeration, restoring machine-readable interop with verifiers and
+  integration partners (GA blocker for the Article 50 "standards-conformant"
+  claim).
+
 ## [2.1.0] - 2026-06-02
 
 ### Added

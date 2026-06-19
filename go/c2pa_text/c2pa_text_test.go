@@ -132,12 +132,12 @@ func TestValidateTextBadVersion(t *testing.T) {
 	}
 	found := false
 	for _, issue := range result.Issues {
-		if issue.Code == ValidationCodeUnsupportedVersion {
+		if issue.Code == ValidationCodeCorruptedWrapper {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected UnsupportedVersion code, got %v", result.Issues)
+		t.Fatalf("expected CorruptedWrapper code, got %v", result.Issues)
 	}
 }
 
@@ -165,12 +165,12 @@ func TestValidateTextLengthMismatch(t *testing.T) {
 	}
 	found := false
 	for _, issue := range result.Issues {
-		if issue.Code == ValidationCodeLengthMismatch {
+		if issue.Code == ValidationCodeCorruptedWrapper {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected LengthMismatch code, got %v", result.Issues)
+		t.Fatalf("expected CorruptedWrapper code, got %v", result.Issues)
 	}
 }
 
@@ -222,5 +222,71 @@ func TestValidateTextBadMagicIgnored(t *testing.T) {
 	result := ValidateText(text)
 	if !result.Valid {
 		t.Fatalf("expected valid (bad magic should be ignored), got issues: %v", result.Issues)
+	}
+}
+
+// TestOnlyRegisteredCodesEmitted verifies every status code produced by the
+// validators is a member of the C2PA registered validation-status enumeration.
+func TestOnlyRegisteredCodesEmitted(t *testing.T) {
+	registered := map[ValidationCode]bool{
+		ValidationCodeCorruptedWrapper: true,
+		ValidationCodeMultipleWrappers: true,
+	}
+	assertRegistered := func(result *ValidationResult) {
+		for _, issue := range result.Issues {
+			if !registered[issue.Code] {
+				t.Fatalf("emitted unregistered status code %q", issue.Code)
+			}
+		}
+	}
+
+	jumbf := minimalJumbfBox()
+
+	// Direct manifest / JUMBF structural failures.
+	empty := ValidateManifest([]byte{}, true, false)
+	truncated := ValidateManifest(append([]byte{0, 0, 0, 100}, []byte("jumb")...), true, false)
+	badType := ValidateManifest(append([]byte{0, 0, 0, 8}, []byte("xxxx")...), true, false)
+	badSize := ValidateManifest(append([]byte{0, 0, 0, 5}, []byte("jumb")...), true, false)
+	missingDesc := ValidateJumbfStructure(append([]byte{0, 0, 0, 8}, []byte("jumb")...), true)
+
+	// Wrapper-level failures.
+	tooShort := ValidateWrapperBytes([]byte("short"))
+	var badVerRaw []byte
+	badVerRaw = append(badVerRaw, Magic...)
+	badVerRaw = append(badVerRaw, 99)
+	verLen := make([]byte, 4)
+	binary.BigEndian.PutUint32(verLen, uint32(len(jumbf)))
+	badVerRaw = append(badVerRaw, verLen...)
+	badVerRaw = append(badVerRaw, jumbf...)
+	badVersionWrapper := ValidateWrapperBytes(badVerRaw)
+
+	// Text-level failures.
+	signed := EmbedManifest("hello", jumbf)
+	multi := ValidateText(signed + EncodeWrapper(jumbf))
+
+	cases := []*ValidationResult{empty, truncated, badType, badSize, missingDesc, tooShort, badVersionWrapper, multi}
+	sawFailure := false
+	for _, result := range cases {
+		if result.Valid {
+			t.Fatalf("expected failure, got valid result")
+		}
+		if len(result.Issues) > 0 {
+			sawFailure = true
+		}
+		assertRegistered(result)
+	}
+	if !sawFailure {
+		t.Fatalf("battery should have produced failures")
+	}
+
+	// The multiple-wrappers case must use the registered multipleWrappers code.
+	foundMulti := false
+	for _, issue := range multi.Issues {
+		if issue.Code == ValidationCodeMultipleWrappers {
+			foundMulti = true
+		}
+	}
+	if !foundMulti {
+		t.Fatalf("expected MultipleWrappers code, got %v", multi.Issues)
 	}
 }

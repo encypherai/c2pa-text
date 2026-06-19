@@ -529,7 +529,10 @@ mod tests {
         let result = validate_manifest(&truncated, true, false);
         assert!(!result.valid);
         assert_eq!(result.primary_code(), ValidationCode::CorruptedWrapper);
-        assert!(result.issues[0].message.to_lowercase().contains("truncated"));
+        assert!(result.issues[0]
+            .message
+            .to_lowercase()
+            .contains("truncated"));
     }
 
     // ---------- validate_text tests ----------
@@ -589,7 +592,10 @@ mod tests {
         assert!(!result.valid);
         let codes: Vec<_> = result.issues.iter().map(|i| &i.code).collect();
         assert!(codes.contains(&&ValidationCode::CorruptedWrapper));
-        assert!(result.issues.iter().any(|i| i.message.contains("Unsupported version")));
+        assert!(result
+            .issues
+            .iter()
+            .any(|i| i.message.contains("Unsupported version")));
     }
 
     #[test]
@@ -613,7 +619,10 @@ mod tests {
         assert!(!result.valid);
         let codes: Vec<_> = result.issues.iter().map(|i| &i.code).collect();
         assert!(codes.contains(&&ValidationCode::CorruptedWrapper));
-        assert!(result.issues.iter().any(|i| i.message.contains("Length mismatch")));
+        assert!(result
+            .issues
+            .iter()
+            .any(|i| i.message.contains("Length mismatch")));
     }
 
     #[test]

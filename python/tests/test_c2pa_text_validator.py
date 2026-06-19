@@ -360,9 +360,7 @@ class TestRegisteredStatusCodes:
 
     def _assert_registered(self, result):
         for issue in result.issues:
-            assert (
-                issue.code.value in self.REGISTERED
-            ), f"unregistered status code emitted: {issue.code.value}"
+            assert issue.code.value in self.REGISTERED, f"unregistered status code emitted: {issue.code.value}"
 
     def test_manifest_and_jumbf_failures_are_registered(self):
         cases = [

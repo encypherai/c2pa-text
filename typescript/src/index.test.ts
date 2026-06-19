@@ -1,7 +1,7 @@
 /**
  * Tests for c2pa-text TypeScript implementation
  */
-import { embedManifest, extractManifest, encodeWrapper, validateText, validateWrapperBytes, ValidationCode } from './index';
+import { embedManifest, extractManifest, encodeWrapper, validateText, validateWrapperBytes, validateManifest, validateJumbfStructure, ValidationCode } from './index';
 
 // Test data - minimal valid JUMBF box
 const TEST_MANIFEST = new Uint8Array([0x00, 0x00, 0x00, 0x10, 0x6a, 0x75, 0x6d, 0x62, 0x00, 0x00, 0x00, 0x08, 0x63, 0x32, 0x70, 0x61]);
@@ -124,7 +124,7 @@ describe('c2pa-text', () => {
       const text = 'Some text' + wrapper;
       const result = validateText(text);
       expect(result.valid).toBe(false);
-      expect(result.issues.some(i => i.code === ValidationCode.UnsupportedVersion)).toBe(true);
+      expect(result.issues.some(i => i.code === ValidationCode.CorruptedWrapper)).toBe(true);
     });
 
     it('should detect length mismatch (truncated)', () => {
@@ -153,7 +153,7 @@ describe('c2pa-text', () => {
       const text = 'Some text' + wrapper;
       const result = validateText(text);
       expect(result.valid).toBe(false);
-      expect(result.issues.some(i => i.code === ValidationCode.LengthMismatch)).toBe(true);
+      expect(result.issues.some(i => i.code === ValidationCode.CorruptedWrapper)).toBe(true);
     });
 
     it('should accept trailing padding (actual > declared)', () => {
@@ -228,4 +228,72 @@ describe('c2pa-text', () => {
       expect(result.issues.some(i => i.code === ValidationCode.CorruptedWrapper)).toBe(true);
     });
   });
+  describe('registered status codes', () => {
+    const REGISTERED = new Set<string>([
+      'manifest.text.corruptedWrapper',
+      'manifest.text.multipleWrappers',
+    ]);
+    const MAGIC = [0x43, 0x32, 0x50, 0x41, 0x54, 0x58, 0x54, 0x00];
+    const VS_START = 0xFE00;
+    const VS_SUP_START = 0xE0100;
+    const byteToVsChar = (byte: number): string =>
+      byte <= 15
+        ? String.fromCodePoint(VS_START + byte)
+        : String.fromCodePoint(VS_SUP_START + (byte - 16));
+    const minimalJumbf = new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x6a, 0x75, 0x6d, 0x62]);
+
+    const assertRegistered = (issues: { code: ValidationCode }[]) => {
+      for (const issue of issues) {
+        expect(REGISTERED.has(issue.code)).toBe(true);
+      }
+    };
+
+    it('only emits registered codes for manifest/JUMBF failures', () => {
+      const cases = [
+        validateManifest(new Uint8Array([])), // empty
+        validateManifest(new Uint8Array([0x00, 0x00, 0x00, 0x64, 0x6a, 0x75, 0x6d, 0x62])), // truncated (declares 100)
+        validateManifest(new Uint8Array([0x00, 0x00, 0x00, 0x08, 0x78, 0x78, 0x78, 0x78])), // bad box type
+        validateManifest(new Uint8Array([0x00, 0x00, 0x00, 0x05, 0x6a, 0x75, 0x6d, 0x62])), // bad box size
+        validateJumbfStructure(minimalJumbf, true), // missing description box (strict)
+      ];
+      let sawFailure = false;
+      for (const result of cases) {
+        expect(result.valid).toBe(false);
+        if (result.issues.length > 0) sawFailure = true;
+        assertRegistered(result.issues);
+      }
+      expect(sawFailure).toBe(true);
+    });
+
+    it('only emits registered codes for wrapper failures', () => {
+      const cases = [
+        validateWrapperBytes(new Uint8Array([0x43, 0x32, 0x50, 0x41])), // too short
+        validateWrapperBytes(new Uint8Array([...Array(13).fill(0), ...minimalJumbf])), // bad magic
+      ];
+      for (const result of cases) {
+        expect(result.valid).toBe(false);
+        assertRegistered(result.issues);
+      }
+    });
+
+    it('only emits registered codes for text failures', () => {
+      // Multiple wrappers -> manifest.text.multipleWrappers
+      const wrapper = encodeWrapper(TEST_MANIFEST);
+      const multi = validateText(TEST_TEXT + wrapper + ' x ' + wrapper);
+      expect(multi.valid).toBe(false);
+      expect(multi.issues.some(i => i.code === ValidationCode.MultipleWrappers)).toBe(true);
+      assertRegistered(multi.issues);
+
+      // Corrupted wrapper (bad version) inside text -> manifest.text.corruptedWrapper
+      let bad = '\uFEFF';
+      for (const b of MAGIC) bad += byteToVsChar(b);
+      bad += byteToVsChar(99); // bad version
+      bad += byteToVsChar(0) + byteToVsChar(0) + byteToVsChar(0) + byteToVsChar(8); // length = 8
+      for (const b of [0x00, 0x00, 0x00, 0x08, 0x6a, 0x75, 0x6d, 0x62]) bad += byteToVsChar(b);
+      const result = validateText('Some text' + bad);
+      expect(result.valid).toBe(false);
+      assertRegistered(result.issues);
+    });
+  });
+
 });

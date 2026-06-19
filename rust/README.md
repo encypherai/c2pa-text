@@ -140,13 +140,11 @@ Available validation functions:
 - `validate_jumbf_structure(bytes, strict=True)` - Strict C2PA compliance checks
 - `validate_wrapper_bytes(bytes)` - Validate pre-encoded wrapper bytes
 
-Validation codes follow the C2PA conformance rubric vocabulary:
-- `manifest.text.corruptedWrapper` - Invalid JUMBF structure in wrapper
-- `manifest.text.multipleWrappers` - More than one wrapper found
-- `manifest.text.invalidMagic` - Bad C2PA magic bytes
-- `manifest.text.unsupportedVersion` - Unrecognized wrapper version
-- `manifest.text.lengthMismatch` - Declared length exceeds actual JUMBF data
-- `manifest.text.emptyManifest` - Zero-length JUMBF payload
+Validation status codes are members of the C2PA registered validation-status enumeration (spec rule `VAL-CONT-0005` / predicate `PRED-TEXT-001`), so verifiers and integration partners get machine-readable interop:
+- `manifest.text.corruptedWrapper` - A `C2PATextManifestWrapper` was located but is malformed or incomplete: bad magic, unsupported version, truncated/length mismatch, or an invalid embedded JUMBF manifest store.
+- `manifest.text.multipleWrappers` - More than one valid wrapper was found.
+
+The specific structural reason for a failure is carried in `issue.message`, mirroring the C2PA model of a coarse status code plus a human-readable explanation.
 
 ## Usage (TypeScript)
 

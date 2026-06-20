@@ -68,9 +68,38 @@ jobs:
           echo "Scanning commit messages for private repo references..."
 
           BLOCKED_PATTERNS=(
+            # Private repo / internal tracker references
             "encypherai-commercial"
             "encypherai/encypherai-commercial"
             "specs-core#[0-9]"
+            "\.teams/"
+            "\.questions/"
+            "company_internal"
+            "\bPRD\b"
+            # Internal service / app / integration scopes (commit-prefix leakage)
+            "enterprise[_-]api"
+            "verification-service"
+            "chatbot-service"
+            "web-service"
+            "auth-service"
+            "ca-service"
+            "tsa-service"
+            "api-gateway"
+            "audio-watermark"
+            "video-watermark"
+            "chrome-extension"
+            "wordpress"
+            "outlook"
+            "ghost-provenance"
+            "marketing-site"
+            "ap-demo"
+            # Commercial / strategy leakage
+            "\bpatent"
+            "\bpricing\b"
+            "whitelabel"
+            "go.to.market"
+            "\bGTM\b"
+            "\broadmap\b"
           )
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then

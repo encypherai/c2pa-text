@@ -91,26 +91,26 @@ func WorstCaseWrapperByteLength(manifestByteCount int) int {
 }
 
 // computePadding returns padding byte values whose VS encoding totals
-// exactly gap UTF-8 bytes. Bytes 0x00 encode to 3-byte VS, 0xFF to 4-byte VS.
+// exactly gap UTF-8 bytes. Bytes 0x00 encode to 3-byte VS, 0x10 to 4-byte VS.
 func computePadding(gap int) ([]byte, error) {
 	if gap == 0 {
 		return nil, nil
 	}
-	for b := gap / 4; b >= 0; b-- {
-		remainder := gap - 4*b
-		if remainder >= 0 && remainder%3 == 0 {
-			a := remainder / 3
-			result := make([]byte, 0, a+b)
-			for i := 0; i < a; i++ {
-				result = append(result, 0x00)
-			}
-			for i := 0; i < b; i++ {
-				result = append(result, 0xFF)
-			}
-			return result, nil
-		}
+	// Spec decomposition: b = gap%3 makes gap-4b divisible by 3.
+	b := gap % 3
+	if gap < 4*b {
+		// 1, 2 and 5 are not expressible as 3a + 4b
+		return nil, errors.New("cannot compute padding for given gap")
 	}
-	return nil, errors.New("cannot compute padding for given gap")
+	a := (gap - 4*b) / 3
+	result := make([]byte, 0, a+b)
+	for i := 0; i < a; i++ {
+		result = append(result, 0x00)
+	}
+	for i := 0; i < b; i++ {
+		result = append(result, 0x10)
+	}
+	return result, nil
 }
 
 // EncodeWrapperPadded encodes a C2PA Text Manifest Wrapper and pads to an

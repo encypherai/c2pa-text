@@ -138,3 +138,43 @@ class TestBackwardCompatibility:
         # All bytes decode, but manifestLength tells you where manifest ends
         decoded = decode_wrapper_sequence("".join(chr(0xE0100 + b - 16) if b >= 16 else chr(0xFE00 + b) for b in payload))
         assert decoded[: 13 + 2] == header + manifest
+
+
+def _vs(padding: list[int]) -> str:
+    """Encode padding byte values as their variation selectors."""
+    return "".join(chr(0xE0100 + b - 16) if b >= 16 else chr(0xFE00 + b) for b in padding)
+
+
+class TestSpecifiedDecomposition:
+    """The specification fixes both the decomposition and the padding byte
+    values so that compliant generators emit byte-identical wrappers for the
+    same manifest."""
+
+    def test_decomposition_matches_spec(self):
+        """b = gap % 3, a = (gap - 4b) // 3, then a bytes of 0x00 and b of 0x10."""
+        from c2pa_text import _compute_padding
+
+        assert _compute_padding(0) == []
+        assert _compute_padding(6) == [0x00, 0x00]
+        assert _compute_padding(7) == [0x00, 0x10]
+        assert _compute_padding(8) == [0x10, 0x10]
+        assert _compute_padding(9) == [0x00, 0x00, 0x00]
+        # gap = 12 admits more than one decomposition (four 3-byte selectors or
+        # three 4-byte ones); the specified one is four 0x00.
+        assert _compute_padding(12) == [0x00] * 4
+
+    def test_padding_encodes_to_exact_byte_count(self):
+        """Every representable gap encodes to exactly that many UTF-8 bytes."""
+        from c2pa_text import _compute_padding
+
+        for gap in range(6, 201):
+            encoded = _vs(_compute_padding(gap))
+            assert len(encoded.encode("utf-8")) == gap, f"gap {gap}"
+
+    def test_unrepresentable_gaps_rejected(self):
+        """1, 2 and 5 are not expressible as 3a + 4b."""
+        from c2pa_text import _compute_padding
+
+        for gap in (1, 2, 5):
+            with pytest.raises(ValueError):
+                _compute_padding(gap)

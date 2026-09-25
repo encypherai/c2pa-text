@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Padded deterministic wrappers now use the padding decomposition specified in
+  C2PA 2.4 Appendix A.8 (0x00 bytes, then (G mod 3) bytes of 0x10) in all four
+  SDKs. Output bytes of padded wrappers change; the target length and hard-binding
+  range are unchanged, and wrappers signed with earlier padding still decode and
+  validate, because decoders ignore padding values.
+
 ## [3.0.0] - 2026-06-19
 
 ### Changed

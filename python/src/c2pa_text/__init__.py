@@ -140,14 +140,13 @@ def _compute_padding(gap: int) -> list[int]:
     """
     if gap == 0:
         return []
-    # Try to express gap as 3a + 4b, preferring fewer characters (maximize b)
-    for b in range(gap // 4, -1, -1):
-        remainder = gap - 4 * b
-        if remainder >= 0 and remainder % 3 == 0:
-            a = remainder // 3
-            return [0x00] * a + [0xFF] * b
-    # Unreachable for gap >= 3 and gap != 5, but defensive
-    raise ValueError(f"Cannot pad {gap} UTF-8 bytes with 3-byte and 4-byte VS characters")
+    # Spec decomposition: b = gap % 3 makes `gap - 4b` divisible by 3.
+    b = gap % 3
+    if gap < 4 * b:
+        # 1, 2 and 5 are not expressible as 3a + 4b
+        raise ValueError(f"Cannot pad {gap} UTF-8 bytes with 3-byte and 4-byte VS characters")
+    a = (gap - 4 * b) // 3
+    return [0x00] * a + [0x10] * b
 
 
 def encode_wrapper_padded(manifest_bytes: bytes, target_byte_length: int) -> str:

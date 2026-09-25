@@ -290,3 +290,65 @@ func TestOnlyRegisteredCodesEmitted(t *testing.T) {
 		t.Fatalf("expected MultipleWrappers code, got %v", multi.Issues)
 	}
 }
+
+// The specification fixes the decomposition and the padding byte values so that
+// compliant generators emit byte-identical wrappers for the same manifest.
+func TestComputePaddingUsesSpecifiedDecomposition(t *testing.T) {
+	cases := []struct {
+		gap  int
+		want []byte
+	}{
+		{0, nil},
+		// b = gap%3, a = (gap-4b)/3, then a bytes of 0x00 and b of 0x10.
+		{6, []byte{0x00, 0x00}},
+		{7, []byte{0x00, 0x10}},
+		{8, []byte{0x10, 0x10}},
+		{9, []byte{0x00, 0x00, 0x00}},
+		// gap = 12 admits more than one decomposition (four 3-byte selectors or
+		// three 4-byte ones); the specified one is four 0x00.
+		{12, []byte{0x00, 0x00, 0x00, 0x00}},
+	}
+	for _, c := range cases {
+		got, err := computePadding(c.gap)
+		if err != nil {
+			t.Fatalf("computePadding(%d) returned error: %v", c.gap, err)
+		}
+		if len(got) != len(c.want) {
+			t.Fatalf("computePadding(%d) = %v, want %v", c.gap, got, c.want)
+		}
+		for i := range c.want {
+			if got[i] != c.want[i] {
+				t.Fatalf("computePadding(%d) = %v, want %v", c.gap, got, c.want)
+			}
+		}
+	}
+}
+
+func TestComputePaddingEncodesToExactByteCount(t *testing.T) {
+	for gap := 6; gap <= 200; gap++ {
+		padding, err := computePadding(gap)
+		if err != nil {
+			t.Fatalf("computePadding(%d) returned error: %v", gap, err)
+		}
+		encoded := ""
+		for _, b := range padding {
+			r, err := byteToVS(b)
+			if err != nil {
+				t.Fatalf("byteToVS(%#x) returned error: %v", b, err)
+			}
+			encoded += string(r)
+		}
+		if len(encoded) != gap {
+			t.Fatalf("gap %d encoded to %d bytes", gap, len(encoded))
+		}
+	}
+}
+
+func TestComputePaddingRejectsUnrepresentableGaps(t *testing.T) {
+	// 1, 2 and 5 are not expressible as 3a + 4b.
+	for _, gap := range []int{1, 2, 5} {
+		if _, err := computePadding(gap); err == nil {
+			t.Fatalf("computePadding(%d) should have failed", gap)
+		}
+	}
+}

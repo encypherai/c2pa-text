@@ -135,14 +135,14 @@ export function worstCaseWrapperByteLength(manifestByteCount: number): number {
  */
 function computePadding(gap: number): number[] {
   if (gap === 0) return [];
-  for (let b = Math.floor(gap / 4); b >= 0; b--) {
-    const remainder = gap - 4 * b;
-    if (remainder >= 0 && remainder % 3 === 0) {
-      const a = remainder / 3;
-      return [...Array(a).fill(0x00), ...Array(b).fill(0xFF)];
-    }
+  // Spec decomposition: b = gap % 3 makes `gap - 4b` divisible by 3.
+  const b = gap % 3;
+  if (gap < 4 * b) {
+    // 1, 2 and 5 are not expressible as 3a + 4b
+    throw new Error(`Cannot pad ${gap} UTF-8 bytes with 3-byte and 4-byte VS characters`);
   }
-  throw new Error(`Cannot pad ${gap} UTF-8 bytes with 3-byte and 4-byte VS characters`);
+  const a = (gap - 4 * b) / 3;
+  return [...Array(a).fill(0x00), ...Array(b).fill(0x10)];
 }
 
 /**

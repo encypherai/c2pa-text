@@ -119,27 +119,21 @@ pub fn worst_case_wrapper_byte_length(manifest_byte_count: usize) -> usize {
 }
 
 /// Compute padding bytes whose VS encoding totals exactly `gap` UTF-8 bytes.
-/// Returns a Vec of byte values (0x00 for 3-byte VS, 0xFF for 4-byte VS).
+/// Returns a Vec of byte values (0x00 for 3-byte VS, 0x10 for 4-byte VS).
 fn compute_padding(gap: usize) -> Result<Vec<u8>, Error> {
     if gap == 0 {
         return Ok(Vec::new());
     }
-    // Solve 3a + 4b = gap, preferring fewer characters (maximize b)
-    let mut b = gap / 4;
-    loop {
-        let remainder = gap - 4 * b;
-        if remainder.is_multiple_of(3) {
-            let a = remainder / 3;
-            let mut result = vec![0x00u8; a];
-            result.extend(vec![0xFFu8; b]);
-            return Ok(result);
-        }
-        if b == 0 {
-            break;
-        }
-        b -= 1;
+    // Spec decomposition: b = gap mod 3 makes `gap - 4b` divisible by 3.
+    let b = gap % 3;
+    let four_b = 4 * b;
+    if gap < four_b {
+        return Err(Error::Truncated); // 1, 2 and 5 are not expressible as 3a + 4b
     }
-    Err(Error::Truncated) // Should not happen with +6 margin
+    let a = (gap - four_b) / 3;
+    let mut result = vec![0x00u8; a];
+    result.extend(vec![0x10u8; b]);
+    Ok(result)
 }
 
 /// Encode a C2PA Text Manifest Wrapper and pad to an exact UTF-8 byte length.
@@ -272,5 +266,65 @@ pub fn extract_manifest(text: &str) -> Result<ExtractionResult, Error> {
             offset: None,
             length: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The specification fixes the decomposition and the padding byte values so
+    /// that compliant generators emit byte-identical wrappers for one manifest.
+    #[test]
+    fn padding_uses_the_specified_decomposition() {
+        assert_eq!(compute_padding(0).unwrap(), Vec::<u8>::new());
+        // b = gap mod 3, a = (gap - 4b) / 3, a bytes of 0x00 then b of 0x10.
+        assert_eq!(compute_padding(6).unwrap(), vec![0x00, 0x00]);
+        assert_eq!(compute_padding(7).unwrap(), vec![0x00, 0x10]);
+        assert_eq!(compute_padding(8).unwrap(), vec![0x10, 0x10]);
+        assert_eq!(compute_padding(9).unwrap(), vec![0x00, 0x00, 0x00]);
+        // gap = 12 has more than one valid decomposition (four 3-byte selectors
+        // or three 4-byte ones); the specified one is four 0x00.
+        assert_eq!(compute_padding(12).unwrap(), vec![0x00; 4]);
+    }
+
+    #[test]
+    fn padding_encodes_to_exactly_the_requested_byte_count() {
+        for gap in 6..=200usize {
+            let padding = compute_padding(gap).expect("gap >= 6 is representable");
+            let encoded: String = padding.iter().map(|&b| byte_to_vs(b)).collect();
+            assert_eq!(
+                encoded.len(),
+                gap,
+                "gap {gap} encoded to {} bytes",
+                encoded.len()
+            );
+        }
+    }
+
+    #[test]
+    fn padded_wrapper_hits_the_deterministic_target_length() {
+        for m in [0usize, 1, 17, 200] {
+            let manifest = vec![0xABu8; m];
+            let target = worst_case_wrapper_byte_length(m);
+            let padded =
+                encode_wrapper_padded(&manifest, target).expect("target is the worst case");
+            assert_eq!(padded.len(), target, "manifest of {m} bytes");
+            // Padding is ignored on decode; the manifest round-trips intact.
+            let extracted = extract_manifest(&padded).expect("wrapper decodes");
+            assert_eq!(extracted.manifest.as_deref(), Some(&manifest[..]));
+        }
+    }
+
+    #[test]
+    fn gaps_that_are_not_representable_are_rejected() {
+        // 1, 2 and 5 are not expressible as 3a + 4b. The +6 margin keeps real
+        // wrappers clear of them, but the guard must hold.
+        for gap in [1usize, 2, 5] {
+            assert!(
+                compute_padding(gap).is_err(),
+                "gap {gap} should be rejected"
+            );
+        }
     }
 }
